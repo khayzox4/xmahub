@@ -157,10 +157,12 @@ const giveawayCommands = [
       },
     ],
   },
+
   {
     name: "listgiveaways",
     description: "📋 Voir tous les giveaways actifs",
   },
+
   {
     name: "endgiveaway",
     description: "🏁 Terminer un giveaway manuellement",
@@ -171,18 +173,19 @@ const giveawayCommands = [
         type: 4,
         required: true,
       },
+    ],
+  },
+
+  {
+    name: "reroll",
+    description: "🔁 Relancer le tirage d'un giveaway terminé",
+    options: [
       {
-  name: "reroll",
-  description: "🔁 Relancer le tirage d'un giveaway terminé",
-  options: [
-    {
-      name: "id",
-      description: "ID du giveaway",
-      type: 4,
-      required: true,
-    },
-  ],
-},
+        name: "id",
+        description: "ID du giveaway",
+        type: 4,
+        required: true,
+      },
     ],
   },
 ];
