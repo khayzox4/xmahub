@@ -246,8 +246,55 @@ function buildGiveawayEmbed(giveaway) {
   return embed;
 }
 
-async function scheduleGiveawayEnd(giveawayId, endsAt) 
-{async function handleRerollGiveaway(interaction) {
+async function scheduleGiveawayEnd(giveawayId, endsAt) {
+  const delay = new Date(endsAt).getTime() - Date.now();
+  if (delay <= 0) return;
+
+  setTimeout(async () => {
+    try {
+      const [giveaway] = await db
+        .select()
+        .from(giveawaysTable)
+        .where(eq(giveawaysTable.id, giveawayId));
+
+      if (!giveaway || giveaway.status === "ended") return;
+
+      const participants = await db
+        .select()
+        .from(giveawayParticipantsTable)
+        .where(eq(giveawayParticipantsTable.giveawayId, giveawayId));
+
+      const shuffled = [...participants].sort(() => Math.random() - 0.5);
+      const selectedWinners = shuffled
+        .slice(0, giveaway.winnersCount)
+        .map((p) => p.username);
+
+      const [updated] = await db
+        .update(giveawaysTable)
+        .set({ status: "ended", winners: selectedWinners })
+        .where(eq(giveawaysTable.id, giveawayId))
+        .returning();
+
+      if (giveaway.channelId && giveaway.messageId) {
+        const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+        if (channel && channel.isTextBased()) {
+          const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+          if (message) {
+            await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+
+            await channel.send(
+              `🎉 Giveaway terminé : **${giveaway.prize}**\n🏆 Gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Erreur fin giveaway :", err);
+    }
+  }, delay);
+}
+
+async function handleRerollGiveaway(interaction) {
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
@@ -278,18 +325,14 @@ async function scheduleGiveawayEnd(giveawayId, endsAt)
 
     const [updated] = await db
       .update(giveawaysTable)
-      .set({ winners })
+      .set({ status: "ended", winners })
       .where(eq(giveawaysTable.id, id))
       .returning();
 
-    const channel = await client.channels
-      .fetch(giveaway.channelId)
-      .catch(() => null);
+    const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
 
     if (channel && channel.isTextBased()) {
-      const message = await channel.messages
-        .fetch(giveaway.messageId)
-        .catch(() => null);
+      const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
 
       if (message) {
         await message.edit({
@@ -407,13 +450,7 @@ client.on("interactionCreate", async (interaction) => {
   const { guild, member } = interaction;
     if (interaction.isChatInputCommand()) {
     try {
-          if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-      return await interaction.reply({
-        content: "❌ Seuls les administrateurs peuvent utiliser ces commandes.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-      if (interaction.commandName === "creategiveaway") {
+                if (interaction.commandName === "creategiveaway") {
         const prize = interaction.options.getString("prix", true);
         const durationMinutes = interaction.options.getInteger("duree", true);
         const winnersCount = interaction.options.getInteger("gagnants", true);
@@ -475,10 +512,46 @@ client.on("interactionCreate", async (interaction) => {
         const id = interaction.options.getInteger("id", true);
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-              if (interaction.commandName === "reroll") {
-        return await handleRerollGiveaway(interaction);
+        const [giveaway] = await db
+          .select()
+          .from(giveawaysTable)
+          .where(eq(giveawaysTable.id, id));
+
+        if (!giveaway) return await interaction.editReply("❌ Giveaway introuvable.");
+        if (giveaway.status === "ended") return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
+
+        const participants = await db
+          .select()
+          .from(giveawayParticipantsTable)
+          .where(eq(giveawayParticipantsTable.giveawayId, id));
+
+        const shuffled = [...participants].sort(() => Math.random() - 0.5);
+        const selectedWinners = shuffled.slice(0, giveaway.winnersCount).map((p) => p.username);
+
+        const [updated] = await db
+          .update(giveawaysTable)
+          .set({ status: "ended", winners: selectedWinners })
+          .where(eq(giveawaysTable.id, id))
+          .returning();
+
+        if (giveaway.channelId && giveaway.messageId) {
+          const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+          if (channel && channel.isTextBased()) {
+            const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+            if (message) {
+              await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+            }
+          }
+        }
+
+        return await interaction.editReply(
+          `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
+        );
       }
 
+      if (interaction.commandName === "reroll") {
+        return await handleRerollGiveaway(interaction);
+      }
         const [giveaway] = await db
           .select()
           .from(giveawaysTable)
