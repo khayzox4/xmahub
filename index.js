@@ -171,6 +171,18 @@ const giveawayCommands = [
         type: 4,
         required: true,
       },
+      {
+  name: "reroll",
+  description: "🔁 Relancer le tirage d'un giveaway terminé",
+  options: [
+    {
+      name: "id",
+      description: "ID du giveaway",
+      type: 4,
+      required: true,
+    },
+  ],
+},
     ],
   },
 ];
@@ -231,7 +243,60 @@ function buildGiveawayEmbed(giveaway) {
   return embed;
 }
 
-async function scheduleGiveawayEnd(giveawayId, endsAt) {
+async function scheduleGiveawayEnd(giveawayId, endsAt) 
+{async function handleRerollGiveaway(interaction) {
+  const id = interaction.options.getInteger("id", true);
+  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+  const [giveaway] = await db
+    .select()
+    .from(giveawaysTable)
+    .where(eq(giveawaysTable.id, id));
+
+  if (!giveaway) {
+    return await interaction.editReply("❌ Giveaway introuvable.");
+  }
+
+  const participants = await db
+    .select()
+    .from(giveawayParticipantsTable)
+    .where(eq(giveawayParticipantsTable.giveawayId, id));
+
+  if (participants.length === 0) {
+    return await interaction.editReply("❌ Aucun participant pour refaire le tirage.");
+  }
+
+  const shuffled = [...participants].sort(() => Math.random() - 0.5);
+  const selectedWinners = shuffled
+    .slice(0, giveaway.winnersCount)
+    .map((p) => p.username);
+
+  const [updated] = await db
+    .update(giveawaysTable)
+    .set({
+      status: "ended",
+      winners: selectedWinners,
+    })
+    .where(eq(giveawaysTable.id, id))
+    .returning();
+
+  if (giveaway.channelId && giveaway.messageId) {
+    const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+    if (channel && channel.isTextBased()) {
+      const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+      if (message) {
+        await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+        await channel.send(
+          `🔁 **Reroll du giveaway ${giveaway.prize}**\nNouveaux gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
+        );
+      }
+    }
+  }
+
+  return await interaction.editReply(
+    `✅ Nouveau tirage effectué pour **${giveaway.prize}**.\nGagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
+  );
+}
   const delay = new Date(endsAt).getTime() - Date.now();
   if (delay <= 0) return;
 
@@ -433,6 +498,10 @@ client.on("interactionCreate", async (interaction) => {
       if (interaction.commandName === "endgiveaway") {
         const id = interaction.options.getInteger("id", true);
         await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+              if (interaction.commandName === "reroll") {
+        return await handleRerollGiveaway(interaction);
+      }
 
         const [giveaway] = await db
           .select()
