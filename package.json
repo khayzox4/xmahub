@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "build": "echo 'No build step needed'",
-    "start": "node bot.js"
-    "migrate": "node src/migrate.js"
+    "start": "node bot.js",
+    "migrate": "node migrate.js"
   },
   "dependencies": {
     "discord.js": "^14.18.0",
