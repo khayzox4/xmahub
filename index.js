@@ -129,7 +129,7 @@ const giveawayCommands = [
         name: "prix",
         description: "Le prix du giveaway",
         type: 3,
-        required: true,
+        required: false,
       },
       {
         name: "duree",
