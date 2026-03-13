@@ -1,10 +1,12 @@
 {
-  "name": "discord-bot-role",
+  "name": "discord-bot-xmahub",
   "version": "1.0.0",
-  "description": "Bot Discord - Attribution de rôles Homme/Femme via boutons",
+  "description": "Bot Discord XMAHUB - Rôles genre + Système de tickets",
   "type": "module",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node src/index.js",
+    "pm2": "pm2 start src/index.js --name discord-bot"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
