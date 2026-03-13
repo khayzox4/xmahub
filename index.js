@@ -459,7 +459,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     if (interaction.commandName === "creategiveaway") {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await interaction.deferReply();
 
       const prize = interaction.options.getString("prix", true);
       const durationMinutes = interaction.options.getInteger("duree", true);
@@ -517,7 +517,7 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     if (interaction.commandName === "endgiveaway") {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+      await interaction.deferReply();
 
       const id = interaction.options.getInteger("id", true);
 
