@@ -2,6 +2,7 @@ import "dotenv/config";
 import {
   Client,
   GatewayIntentBits,
+  Partials,
   EmbedBuilder,
   ActionRowBuilder,
   ButtonBuilder,
@@ -15,12 +16,14 @@ import {
   MessageFlags,
 } from "discord.js";
 
-const TOKEN = process.env.DISCORD_TOKEN;
-const ROLE_HOMME_ID = process.env.DISCORD_ROLE_HOMME;
-const ROLE_FEMME_ID = process.env.DISCORD_ROLE_FEMME;
+const TOKEN                = process.env.DISCORD_TOKEN;
+const ROLE_HOMME_ID        = process.env.DISCORD_ROLE_HOMME;
+const ROLE_FEMME_ID        = process.env.DISCORD_ROLE_FEMME;
 const TICKET_CATEGORY_OPEN = process.env.DISCORD_TICKET_CATEGORY_OPEN;
 const TICKET_CATEGORY_CLOSED = process.env.DISCORD_TICKET_CATEGORY_CLOSED;
-const TICKET_LOG_CHANNEL = process.env.DISCORD_TICKET_LOG_CHANNEL;
+const TICKET_LOG_CHANNEL   = process.env.DISCORD_TICKET_LOG_CHANNEL;
+const STAFF_ROLE_ID        = process.env.DISCORD_STAFF_ROLE;
+const RATING_CHANNEL_ID    = process.env.DISCORD_RATING_CHANNEL;
 
 const VIOLET_FONCE = 0x4b0082;
 
@@ -35,22 +38,22 @@ const client = new Client({
     GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
+    GatewayIntentBits.DirectMessages,
   ],
+  partials: [Partials.Channel, Partials.Message],
 });
 
 client.on("error", (err) => console.error("Erreur Discord :", err.message));
 process.on("unhandledRejection", (err) => console.error("Rejection non gérée :", err?.message ?? err));
 
-// Compteur de tickets (persisté dans le nom du canal)
 let ticketCounter = 0;
 
 function formatTicketNumber(n) {
   return String(n).padStart(4, "0");
 }
 
-// Extrait le numéro de ticket depuis le nom du canal (ticket-0001 ou close-0001)
 function getTicketNumFromChannel(channel) {
-  const match = channel.name.match(/(?:ticket|close)-(\d+)/);
+  const match = channel.name.match(/(?:ticket|closed)-(\d+)/);
   return match ? match[1] : null;
 }
 
@@ -73,6 +76,36 @@ async function safeReply(interaction, content) {
   } catch { /* interaction expirée */ }
 }
 
+// Envoie un DM de notation à l'utilisateur quand son ticket est fermé
+async function sendRatingDM(guild, userId, ticketNum) {
+  try {
+    const user = await client.users.fetch(userId);
+    if (!user) return;
+
+    const embed = new EmbedBuilder()
+      .setTitle("⭐ Comment s'est passé ton support ?")
+      .setDescription(
+        `Ton ticket **#${ticketNum}** sur **${guild.name}** vient d'être fermé.\n\n` +
+        "Merci de noter la qualité de l'aide reçue en cliquant sur une étoile ci-dessous."
+      )
+      .setColor(VIOLET_FONCE)
+      .setFooter({ text: ".gg/xma" })
+      .setTimestamp();
+
+    const row = new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`rate_1_${guild.id}_${ticketNum}`).setLabel("⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`rate_2_${guild.id}_${ticketNum}`).setLabel("⭐⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`rate_3_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`rate_4_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId(`rate_5_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Primary)
+    );
+
+    await user.send({ embeds: [embed], components: [row] });
+  } catch (err) {
+    console.error("Impossible d'envoyer le DM de notation :", err.message);
+  }
+}
+
 // ─── READY ───────────────────────────────────────────────────────────────────
 client.once("clientReady", () => {
   console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
@@ -85,7 +118,7 @@ client.on("messageCreate", async (message) => {
 
   // ── !embedrôle ──
   if (cmd === "!embedrôle" || cmd === "!embedrole") {
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
       return message.reply({ content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)" });
     }
 
@@ -113,7 +146,7 @@ client.on("messageCreate", async (message) => {
 
   // ── !panneauticket ──
   if (cmd === "!panneauticket") {
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+    if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
       return message.reply({ content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)" });
     }
 
@@ -151,8 +184,56 @@ client.on("messageCreate", async (message) => {
 client.on("interactionCreate", async (interaction) => {
   const { guild, member } = interaction;
 
-  // ── Rôles genre (boutons) ─────────────────────────────────────────────────
+  // ── Notation (DM) ─────────────────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
+    const parts = interaction.customId.split("_");
+    const stars = parseInt(parts[1]);
+    const guildId = parts[2];
+    const ticketNum = parts[3];
+
+    try {
+      await interaction.update({ components: [] }); // retire les boutons
+    } catch { /* DM peut-être expiré */ }
+
+    // Poster la notation dans le salon dédié
+    try {
+      const targetGuild = await client.guilds.fetch(guildId).catch(() => null);
+      if (!targetGuild) return;
+
+      const ratingChannel = targetGuild.channels.cache.get(RATING_CHANNEL_ID);
+      if (!ratingChannel) return;
+
+      const starsDisplay = "⭐".repeat(stars);
+      const ratingEmbed = new EmbedBuilder()
+        .setTitle("⭐ Nouvelle notation reçue")
+        .addFields(
+          { name: "👤 Membre", value: `${interaction.user} (${interaction.user.tag})`, inline: true },
+          { name: "🆔 Ticket", value: `#${ticketNum}`, inline: true },
+          { name: "⭐ Note", value: `${starsDisplay} (${stars}/5)`, inline: false }
+        )
+        .setColor(VIOLET_FONCE)
+        .setThumbnail(interaction.user.displayAvatarURL({ size: 64 }))
+        .setFooter({ text: ".gg/xma" })
+        .setTimestamp();
+
+      await ratingChannel.send({ embeds: [ratingEmbed] });
+
+      // Confirmer à l'utilisateur en DM
+      await interaction.followUp({
+        content: `✅ Merci pour ta note de **${stars}/5** ! Ton avis nous aide à améliorer notre support.`,
+        flags: MessageFlags.Ephemeral,
+      }).catch(() => {
+        interaction.user.send(`✅ Merci pour ta note de **${stars}/5** ! Ton avis nous aide à améliorer notre support.`).catch(() => {});
+      });
+    } catch (err) {
+      console.error("Erreur notation :", err.message);
+    }
+    return;
+  }
+
+  // ── Rôles genre (boutons, uniquement en serveur) ──────────────────────────
   if (interaction.isButton() && (interaction.customId === "role_homme" || interaction.customId === "role_femme")) {
+    if (!guild) return;
     const ok = await safeDefer(interaction);
     if (!ok) return;
     try {
@@ -180,7 +261,8 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── Bouton : ouvrir un ticket → affiche le modal ──────────────────────────
   if (interaction.isButton() && interaction.customId === "ticket_open") {
-    // Vérifier si l'utilisateur a déjà un ticket ouvert (nom du canal commence par "ticket-")
+    if (!guild) return;
+
     const existing = guild.channels.cache.find(
       (c) => c.name.startsWith("ticket-") && c.topic === member.id
     );
@@ -210,6 +292,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── Modal soumis : créer le canal ticket ──────────────────────────────────
   if (interaction.isModalSubmit() && interaction.customId === "ticket_modal") {
+    if (!guild) return;
     const ok = await safeDefer(interaction);
     if (!ok) return;
 
@@ -221,35 +304,51 @@ client.on("interactionCreate", async (interaction) => {
 
     try {
       const category = guild.channels.cache.get(TICKET_CATEGORY_OPEN);
+
+      // Permissions de base
+      const permOverwrites = [
+        { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
+        {
+          id: member.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+          ],
+        },
+        {
+          id: client.user.id,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ManageChannels,
+          ],
+        },
+      ];
+
+      // Rôle staff
+      if (STAFF_ROLE_ID) {
+        permOverwrites.push({
+          id: STAFF_ROLE_ID,
+          allow: [
+            PermissionsBitField.Flags.ViewChannel,
+            PermissionsBitField.Flags.SendMessages,
+            PermissionsBitField.Flags.ReadMessageHistory,
+          ],
+        });
+      }
+
       const ticketChannel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
-        topic: member.id, // on stocke l'ID du membre dans le topic pour le retrouver
+        topic: member.id,
         parent: category ?? null,
-        permissionOverwrites: [
-          { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
-          {
-            id: member.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ReadMessageHistory,
-            ],
-          },
-          {
-            id: client.user.id,
-            allow: [
-              PermissionsBitField.Flags.ViewChannel,
-              PermissionsBitField.Flags.SendMessages,
-              PermissionsBitField.Flags.ManageChannels,
-            ],
-          },
-        ],
+        permissionOverwrites: permOverwrites,
       });
 
       // Accès aux rôles admin
       const adminRoles = guild.roles.cache.filter((r) =>
-        r.permissions.has(PermissionFlagsBits.Administrator)
+        r.permissions.has(PermissionFlagsBits.Administrator) && r.id !== STAFF_ROLE_ID
       );
       for (const [, role] of adminRoles) {
         await ticketChannel.permissionOverwrites.create(role, {
@@ -286,9 +385,27 @@ client.on("interactionCreate", async (interaction) => {
         new ButtonBuilder().setCustomId("ticket_delete").setLabel("🗑️ Supprimer").setStyle(ButtonStyle.Secondary)
       );
 
-      await ticketChannel.send({ content: `${member}`, embeds: [ticketEmbed], components: [ticketRow] });
+      // Ping du rôle staff + membre
+      const staffPing = STAFF_ROLE_ID ? `<@&${STAFF_ROLE_ID}> ` : "";
+      await ticketChannel.send({
+        content: `${staffPing}${member}`,
+        embeds: [ticketEmbed],
+        components: [ticketRow],
+      });
+
       await sendLog(guild, "🟢 Ticket ouvert", member, ticketNum, ticketChannel, reason);
-      return safeReply(interaction, `✅ Ton ticket a été créé : ${ticketChannel}`);
+
+      // Bouton lien direct vers le ticket
+      const goRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setLabel("📂 Aller au ticket")
+          .setStyle(ButtonStyle.Link)
+          .setURL(`https://discord.com/channels/${guild.id}/${ticketChannel.id}`)
+      );
+      try {
+        await interaction.editReply({ content: `✅ Ton ticket **#${ticketNum}** a été créé !`, components: [goRow] });
+      } catch { /* interaction expirée */ }
+      return;
     } catch (err) {
       console.error("Erreur création ticket :", err);
       ticketCounter--;
@@ -298,6 +415,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── Bouton : fermer un ticket ─────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "ticket_close") {
+    if (!guild) return;
     const ok = await safeDefer(interaction);
     if (!ok) return;
 
@@ -323,10 +441,8 @@ client.on("interactionCreate", async (interaction) => {
         }
       }
 
-      // Renommer le canal en close-XXXX
-      await channel.setName(`close-${ticketNum}`);
+      await channel.setName(`closed-${ticketNum}`);
 
-      // Déplacer dans la catégorie closed
       if (closedCategory) {
         await channel.setParent(closedCategory.id, { lockPermissions: false });
       }
@@ -345,7 +461,13 @@ client.on("interactionCreate", async (interaction) => {
 
       await channel.send({ embeds: [closedEmbed], components: [reopenRow] });
       await sendLog(guild, "🔴 Ticket fermé", member, ticketNum, channel);
-      return safeReply(interaction, "✅ Le ticket a été fermé.");
+
+      // Envoyer le DM de notation au membre
+      if (userId) {
+        await sendRatingDM(guild, userId, ticketNum);
+      }
+
+      return safeReply(interaction, "✅ Le ticket a été fermé. Une notification de notation a été envoyée au membre.");
     } catch (err) {
       console.error("Erreur fermeture ticket :", err);
       return safeReply(interaction, "❌ Une erreur est survenue lors de la fermeture.");
@@ -354,13 +476,14 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── Bouton : réouvrir un ticket ───────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "ticket_reopen") {
+    if (!guild) return;
     const ok = await safeDefer(interaction);
     if (!ok) return;
 
     const channel = interaction.channel;
     const ticketNum = getTicketNumFromChannel(channel);
 
-    if (!ticketNum || !channel.name.startsWith("close-")) {
+    if (!ticketNum || !channel.name.startsWith("closed-")) {
       return safeReply(interaction, "❌ Ce salon n'est pas un ticket fermé.");
     }
 
@@ -379,7 +502,6 @@ client.on("interactionCreate", async (interaction) => {
         }
       }
 
-      // Renommer en ticket-XXXX
       await channel.setName(`ticket-${ticketNum}`);
 
       if (openCategory) {
@@ -409,6 +531,7 @@ client.on("interactionCreate", async (interaction) => {
 
   // ── Bouton : supprimer un ticket ──────────────────────────────────────────
   if (interaction.isButton() && interaction.customId === "ticket_delete") {
+    if (!guild) return;
     if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
       return safeReply(interaction, "❌ Seuls les administrateurs peuvent supprimer un ticket.");
     }
@@ -440,9 +563,7 @@ async function sendLog(guild, action, member, ticketNum, channel, reason = null)
     { name: "📌 Salon", value: channel ? `${channel}` : "Supprimé", inline: true },
   ];
 
-  if (reason) {
-    fields.push({ name: "📝 Raison", value: reason, inline: false });
-  }
+  if (reason) fields.push({ name: "📝 Raison", value: reason, inline: false });
 
   const logEmbed = new EmbedBuilder()
     .setTitle(`📋 Log — ${action}`)
