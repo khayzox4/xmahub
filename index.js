@@ -1,4 +1,3 @@
-import "dotenv/config";
 import {
   Client,
   GatewayIntentBits,
@@ -76,33 +75,45 @@ async function safeReply(interaction, content) {
   } catch { /* interaction expirée */ }
 }
 
-// Envoie un DM de notation à l'utilisateur quand son ticket est fermé
-async function sendRatingDM(guild, userId, ticketNum) {
+// Construit l'embed + boutons de notation (réutilisé en DM et dans le salon)
+function buildRatingComponents(guildId, ticketNum) {
+  const embed = new EmbedBuilder()
+    .setTitle("⭐ Comment s'est passé ton support ?")
+    .setDescription(
+      `Ton ticket **#${ticketNum}** vient d'être fermé.\n\n` +
+      "Note la qualité de l'aide reçue en cliquant sur une étoile ci-dessous."
+    )
+    .setColor(VIOLET_FONCE)
+    .setFooter({ text: ".gg/xma" })
+    .setTimestamp();
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`rate_1_${guildId}_${ticketNum}`).setLabel("⭐").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`rate_2_${guildId}_${ticketNum}`).setLabel("⭐⭐").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`rate_3_${guildId}_${ticketNum}`).setLabel("⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`rate_4_${guildId}_${ticketNum}`).setLabel("⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`rate_5_${guildId}_${ticketNum}`).setLabel("⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Primary)
+  );
+
+  return { embed, row };
+}
+
+// Tente d'envoyer un DM de notation — retourne { ok, reason }
+async function tryRatingDM(userId, guildId, ticketNum) {
   try {
-    const user = await client.users.fetch(userId);
-    if (!user) return;
-
-    const embed = new EmbedBuilder()
-      .setTitle("⭐ Comment s'est passé ton support ?")
-      .setDescription(
-        `Ton ticket **#${ticketNum}** sur **${guild.name}** vient d'être fermé.\n\n` +
-        "Merci de noter la qualité de l'aide reçue en cliquant sur une étoile ci-dessous."
-      )
-      .setColor(VIOLET_FONCE)
-      .setFooter({ text: ".gg/xma" })
-      .setTimestamp();
-
-    const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`rate_1_${guild.id}_${ticketNum}`).setLabel("⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_2_${guild.id}_${ticketNum}`).setLabel("⭐⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_3_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_4_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_5_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Primary)
-    );
-
-    await user.send({ embeds: [embed], components: [row] });
+    const user = await client.users.fetch(userId, { force: true });
+    if (!user) return { ok: false, reason: "Utilisateur introuvable." };
+    const dmChannel = await user.createDM();
+    const { embed, row } = buildRatingComponents(guildId, ticketNum);
+    await dmChannel.send({ embeds: [embed], components: [row] });
+    return { ok: true };
   } catch (err) {
-    console.error("Impossible d'envoyer le DM de notation :", err.message);
+    const reason =
+      err.code === 50007
+        ? "Il a les messages privés désactivés sur ce serveur."
+        : `Erreur ${err.code ?? "?"} : ${err.message}`;
+    console.error("DM notation échoué :", err.message);
+    return { ok: false, reason };
   }
 }
 
@@ -429,20 +440,27 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const closedCategory = guild.channels.cache.get(TICKET_CATEGORY_CLOSED);
       const userId = channel.topic;
+      const ticketUser = userId ? await guild.members.fetch(userId).catch(() => null) : null;
 
-      // Retirer l'accès au membre
-      if (userId) {
-        const ticketUser = await guild.members.fetch(userId).catch(() => null);
-        if (ticketUser) {
-          await channel.permissionOverwrites.edit(ticketUser, {
-            ViewChannel: false,
-            SendMessages: false,
-          }).catch(() => {});
-        }
+      // 1. Envoyer la notation dans le salon AVANT de retirer l'accès
+      if (userId && ticketUser) {
+        const { embed: ratingEmbed, row: ratingRow } = buildRatingComponents(guild.id, ticketNum);
+        const ratingHeader = new EmbedBuilder()
+          .setDescription(`${ticketUser} — Merci de noter ton expérience avant que le ticket soit fermé.`)
+          .setColor(VIOLET_FONCE);
+        await channel.send({ embeds: [ratingHeader, ratingEmbed], components: [ratingRow] }).catch(() => {});
       }
 
-      await channel.setName(`closed-${ticketNum}`);
+      // 2. Retirer l'accès au membre
+      if (ticketUser) {
+        await channel.permissionOverwrites.edit(ticketUser, {
+          ViewChannel: false,
+          SendMessages: false,
+        }).catch(() => {});
+      }
 
+      // 3. Renommer + déplacer
+      await channel.setName(`closed-${ticketNum}`);
       if (closedCategory) {
         await channel.setParent(closedCategory.id, { lockPermissions: false });
       }
@@ -462,12 +480,17 @@ client.on("interactionCreate", async (interaction) => {
       await channel.send({ embeds: [closedEmbed], components: [reopenRow] });
       await sendLog(guild, "🔴 Ticket fermé", member, ticketNum, channel);
 
-      // Envoyer le DM de notation au membre
+      // 4. Tentative DM en bonus + retour visible
       if (userId) {
-        await sendRatingDM(guild, userId, ticketNum);
+        const { ok, reason } = await tryRatingDM(userId, guild.id, ticketNum);
+        if (ok) {
+          await channel.send({ content: `📬 Un MP de notation a également été envoyé à <@${userId}>.` }).catch(() => {});
+        } else {
+          await channel.send({ content: `⚠️ Impossible d'envoyer un MP à <@${userId}> — ${reason}\nIl peut quand même noter via les boutons ci-dessus.` }).catch(() => {});
+        }
       }
 
-      return safeReply(interaction, "✅ Le ticket a été fermé. Une notification de notation a été envoyée au membre.");
+      return safeReply(interaction, "✅ Le ticket a été fermé.");
     } catch (err) {
       console.error("Erreur fermeture ticket :", err);
       return safeReply(interaction, "❌ Une erreur est survenue lors de la fermeture.");
@@ -554,11 +577,20 @@ client.on("interactionCreate", async (interaction) => {
 // ─── FONCTION LOG ─────────────────────────────────────────────────────────────
 async function sendLog(guild, action, member, ticketNum, channel, reason = null) {
   if (!TICKET_LOG_CHANNEL) return;
-  const logChannel = guild.channels.cache.get(TICKET_LOG_CHANNEL);
-  if (!logChannel) return;
+
+  let logChannel = guild.channels.cache.get(TICKET_LOG_CHANNEL);
+  if (!logChannel) {
+    logChannel = await guild.channels.fetch(TICKET_LOG_CHANNEL).catch(() => null);
+  }
+  if (!logChannel) {
+    console.error(`Salon de logs introuvable : ${TICKET_LOG_CHANNEL}`);
+    return;
+  }
+
+  const username = member?.user?.username ?? member?.user?.tag ?? "Inconnu";
 
   const fields = [
-    { name: "👤 Membre", value: `${member} (${member.user.tag})`, inline: true },
+    { name: "👤 Membre", value: `${member} (${username})`, inline: true },
     { name: "🆔 Ticket", value: `#${ticketNum}`, inline: true },
     { name: "📌 Salon", value: channel ? `${channel}` : "Supprimé", inline: true },
   ];
@@ -572,7 +604,9 @@ async function sendLog(guild, action, member, ticketNum, channel, reason = null)
     .setFooter({ text: ".gg/xma" })
     .setTimestamp();
 
-  await logChannel.send({ embeds: [logEmbed] }).catch(console.error);
+  await logChannel.send({ embeds: [logEmbed] }).catch((err) => {
+    console.error("Erreur envoi log :", err.message);
+  });
 }
 
 client.login(TOKEN);
