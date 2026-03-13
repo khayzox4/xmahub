@@ -448,156 +448,50 @@ client.on("messageCreate", async (message) => {
 // ─── INTERACTIONS ─────────────────────────────────────────────────────────────
 client.on("interactionCreate", async (interaction) => {
   const { guild, member } = interaction;
-    if (interaction.isChatInputCommand()) {
+
+  if (interaction.isChatInputCommand()) {
     try {
-                if (interaction.commandName === "creategiveaway") {
-        const prize = interaction.options.getString("prix", true);
-        const durationMinutes = interaction.options.getInteger("duree", true);
-        const winnersCount = interaction.options.getInteger("gagnants", true);
-        const conditions = interaction.options.getString("conditions") ?? "";
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        return await interaction.reply({
+          content: "❌ Seuls les administrateurs peuvent utiliser ces commandes.",
+          flags: MessageFlags.Ephemeral,
+        });
+      }
 
-        await interaction.deferReply();
-
-        const endsAt = new Date(Date.now() + durationMinutes * 60 * 1000);
-
-        const [giveaway] = await db
-          .insert(giveawaysTable)
-          .values({
-            prize,
-            durationMinutes,
-            winnersCount,
-            conditions,
-            endsAt,
-            channelId: interaction.channelId,
-            guildId: interaction.guildId ?? undefined,
-          })
-          .returning();
-
-        const embed = buildGiveawayEmbed({ ...giveaway, endsAt });
-        const reply = await interaction.editReply({ embeds: [embed] });
-
-        await db
-          .update(giveawaysTable)
-          .set({ messageId: reply.id })
-          .where(eq(giveawaysTable.id, giveaway.id));
-
-        await reply.react("🎉").catch(() => {});
-        scheduleGiveawayEnd(giveaway.id, endsAt);
+      if (interaction.commandName === "creategiveaway") {
+        // ...
         return;
       }
 
       if (interaction.commandName === "listgiveaways") {
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-        const giveaways = await db
-          .select()
-          .from(giveawaysTable)
-          .where(eq(giveawaysTable.status, "active"));
-
-        if (giveaways.length === 0) {
-          return await interaction.editReply("📋 Aucun giveaway actif en ce moment.");
-        }
-
-        const list = giveaways
-          .map((g) => {
-            const ts = Math.floor(new Date(g.endsAt).getTime() / 1000);
-            return `• **ID ${g.id}** — 🏆 ${g.prize} | 🥇 ${g.winnersCount} gagnant(s) | ⏰ <t:${ts}:R>`;
-          })
-          .join("\n");
-
-        return await interaction.editReply(`📋 **Giveaways actifs :**\n${list}`);
+        // ...
+        return;
       }
 
       if (interaction.commandName === "endgiveaway") {
-        const id = interaction.options.getInteger("id", true);
-        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-        const [giveaway] = await db
-          .select()
-          .from(giveawaysTable)
-          .where(eq(giveawaysTable.id, id));
-
-        if (!giveaway) return await interaction.editReply("❌ Giveaway introuvable.");
-        if (giveaway.status === "ended") return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
-
-        const participants = await db
-          .select()
-          .from(giveawayParticipantsTable)
-          .where(eq(giveawayParticipantsTable.giveawayId, id));
-
-        const shuffled = [...participants].sort(() => Math.random() - 0.5);
-        const selectedWinners = shuffled.slice(0, giveaway.winnersCount).map((p) => p.username);
-
-        const [updated] = await db
-          .update(giveawaysTable)
-          .set({ status: "ended", winners: selectedWinners })
-          .where(eq(giveawaysTable.id, id))
-          .returning();
-
-        if (giveaway.channelId && giveaway.messageId) {
-          const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
-          if (channel && channel.isTextBased()) {
-            const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
-            if (message) {
-              await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
-            }
-          }
-        }
-
-        return await interaction.editReply(
-          `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
-        );
+        // ...
+        return;
       }
 
       if (interaction.commandName === "reroll") {
         return await handleRerollGiveaway(interaction);
-      }
-        const [giveaway] = await db
-          .select()
-          .from(giveawaysTable)
-          .where(eq(giveawaysTable.id, id));
-
-        if (!giveaway) return await interaction.editReply("❌ Giveaway introuvable.");
-        if (giveaway.status === "ended") return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
-
-        const participants = await db
-          .select()
-          .from(giveawayParticipantsTable)
-          .where(eq(giveawayParticipantsTable.giveawayId, id));
-
-        const shuffled = [...participants].sort(() => Math.random() - 0.5);
-        const selectedWinners = shuffled.slice(0, giveaway.winnersCount).map((p) => p.username);
-
-        const [updated] = await db
-          .update(giveawaysTable)
-          .set({ status: "ended", winners: selectedWinners })
-          .where(eq(giveawaysTable.id, id))
-          .returning();
-
-        if (giveaway.channelId && giveaway.messageId) {
-          const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
-          if (channel && channel.isTextBased()) {
-            const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
-            if (message) {
-              await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
-            }
-          }
-        }
-
-        return await interaction.editReply(
-          `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
-        );
       }
     } catch (err) {
       console.error("Erreur commande giveaway :", err);
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("❌ Une erreur s'est produite.").catch(() => {});
       } else {
-        await interaction.reply({ content: "❌ Une erreur s'est produite.", flags: MessageFlags.Ephemeral }).catch(() => {});
+        await interaction.reply({
+          content: "❌ Une erreur s'est produite.",
+          flags: MessageFlags.Ephemeral,
+        }).catch(() => {});
       }
       return;
     }
   }
+
+  // autres boutons / modals ici
+});
 
   // ── Notation (DM) ─────────────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
