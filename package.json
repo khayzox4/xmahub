@@ -3,10 +3,9 @@
   "version": "1.0.0",
   "description": "Bot Discord XMAHUB - Rôles genre + Système de tickets",
   "type": "module",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-"start": "node index.js"
-    "pm2": "pm2 start/index.js --name discord-bot"
+    "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
