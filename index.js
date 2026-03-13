@@ -476,7 +476,7 @@ client.on("interactionCreate", async (interaction) => {
       if (interaction.commandName === "reroll") {
         return await handleRerollGiveaway(interaction);
       }
-    } catch (err) {
+        } catch (err) {
       console.error("Erreur commande giveaway :", err);
       if (interaction.deferred || interaction.replied) {
         await interaction.editReply("❌ Une erreur s'est produite.").catch(() => {});
@@ -490,10 +490,7 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // autres boutons / modals ici
-});
-
-  // ── Notation (DM) ─────────────────────────────────────────────────────────
+  // ── Notation (DM)
   if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
     const parts = interaction.customId.split("_");
     const stars = parseInt(parts[1]);
