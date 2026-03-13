@@ -32,7 +32,6 @@ const TICKET_LOG_CHANNEL   = process.env.DISCORD_TICKET_LOG_CHANNEL;
 const STAFF_ROLE_ID        = process.env.DISCORD_STAFF_ROLE;
 const RATING_CHANNEL_ID    = process.env.DISCORD_RATING_CHANNEL;
 const DISCORD_CLIENT_ID    = process.env.DISCORD_CLIENT_ID;
-const RATING_CHANNEL_ID    = process.env.DISCORD_RATING_CHANNEL;
 
 const VIOLET_FONCE = 0x4b0082;
 
