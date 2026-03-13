@@ -1,14 +1,25 @@
 {
-  "name": "discord-bot-xmahub",
+  "name": "giveaway-bot",
   "version": "1.0.0",
-  "description": "Bot Discord XMAHUB - Rôles genre + Système de tickets",
+  "description": "Bot Discord de giveaway avec embeds et sélection automatique des gagnants",
   "type": "module",
-  "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node --loader ts-node/esm src/bot.ts",
+    "dev": "node --watch --loader ts-node/esm src/bot.ts",
+    "migrate": "node --loader ts-node/esm src/migrate.ts",
+    "build": "tsc",
+    "start:prod": "node dist/bot.js"
   },
   "dependencies": {
-    "discord.js": "^14.16.3",
-    "dotenv": "^16.4.5"
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.40.1",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.18.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.7.0"
   }
 }
