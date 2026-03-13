@@ -6,6 +6,9 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  ModalBuilder,
+  TextInputBuilder,
+  TextInputStyle,
   PermissionFlagsBits,
   ChannelType,
   PermissionsBitField,
@@ -35,19 +38,22 @@ const client = new Client({
   ],
 });
 
-// Gestion globale des erreurs pour éviter les crashes
 client.on("error", (err) => console.error("Erreur Discord :", err.message));
 process.on("unhandledRejection", (err) => console.error("Rejection non gérée :", err?.message ?? err));
 
-// Stockage en mémoire des tickets
-const ticketData = new Map();
+// Compteur de tickets (persisté dans le nom du canal)
 let ticketCounter = 0;
 
 function formatTicketNumber(n) {
   return String(n).padStart(4, "0");
 }
 
-// Réponse éphémère sécurisée (évite les crashes si l'interaction a expiré)
+// Extrait le numéro de ticket depuis le nom du canal (ticket-0001 ou close-0001)
+function getTicketNumFromChannel(channel) {
+  const match = channel.name.match(/(?:ticket|close)-(\d+)/);
+  return match ? match[1] : null;
+}
+
 async function safeDefer(interaction) {
   try {
     await interaction.deferReply({ flags: MessageFlags.Ephemeral });
@@ -64,9 +70,7 @@ async function safeReply(interaction, content) {
     } else {
       await interaction.reply({ content, flags: MessageFlags.Ephemeral });
     }
-  } catch {
-    // Interaction expirée, on ignore silencieusement
-  }
+  } catch { /* interaction expirée */ }
 }
 
 // ─── READY ───────────────────────────────────────────────────────────────────
@@ -143,29 +147,26 @@ client.on("messageCreate", async (message) => {
   }
 });
 
-// ─── INTERACTIONS (boutons) ───────────────────────────────────────────────────
+// ─── INTERACTIONS ─────────────────────────────────────────────────────────────
 client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isButton()) return;
+  const { guild, member } = interaction;
 
-  const { customId, member, guild } = interaction;
-
-  // ── Rôles genre ──────────────────────────────────────────────────────────
-  if (customId === "role_homme" || customId === "role_femme") {
+  // ── Rôles genre (boutons) ─────────────────────────────────────────────────
+  if (interaction.isButton() && (interaction.customId === "role_homme" || interaction.customId === "role_femme")) {
     const ok = await safeDefer(interaction);
     if (!ok) return;
     try {
       const roleHomme = await guild.roles.fetch(ROLE_HOMME_ID);
       const roleFemme = await guild.roles.fetch(ROLE_FEMME_ID);
-      if (!roleHomme || !roleFemme) {
-        return safeReply(interaction, "❌ Rôles introuvables. Contacte un administrateur.");
-      }
-      if (customId === "role_homme") {
+      if (!roleHomme || !roleFemme) return safeReply(interaction, "❌ Rôles introuvables. Contacte un administrateur.");
+
+      if (interaction.customId === "role_homme") {
         if (member.roles.cache.has(ROLE_HOMME_ID)) return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Homme**.");
         await member.roles.remove(roleFemme).catch(() => {});
         await member.roles.add(roleHomme);
         return safeReply(interaction, "✅ Le rôle **Homme** t'a été attribué !");
       }
-      if (customId === "role_femme") {
+      if (interaction.customId === "role_femme") {
         if (member.roles.cache.has(ROLE_FEMME_ID)) return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Femme**.");
         await member.roles.remove(roleHomme).catch(() => {});
         await member.roles.add(roleFemme);
@@ -177,18 +178,42 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // ── Ouvrir un ticket ─────────────────────────────────────────────────────
-  if (customId === "ticket_open") {
+  // ── Bouton : ouvrir un ticket → affiche le modal ──────────────────────────
+  if (interaction.isButton() && interaction.customId === "ticket_open") {
+    // Vérifier si l'utilisateur a déjà un ticket ouvert (nom du canal commence par "ticket-")
+    const existing = guild.channels.cache.find(
+      (c) => c.name.startsWith("ticket-") && c.topic === member.id
+    );
+    if (existing) {
+      return interaction.reply({
+        content: `❌ Tu as déjà un ticket ouvert : ${existing}`,
+        flags: MessageFlags.Ephemeral,
+      });
+    }
+
+    const modal = new ModalBuilder()
+      .setCustomId("ticket_modal")
+      .setTitle("📩 Créer un ticket");
+
+    const reasonInput = new TextInputBuilder()
+      .setCustomId("ticket_reason")
+      .setLabel("Quelle est la raison de votre ticket ?")
+      .setStyle(TextInputStyle.Paragraph)
+      .setPlaceholder("Décrivez votre problème en détail...")
+      .setRequired(true)
+      .setMaxLength(500);
+
+    modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
+    await interaction.showModal(modal);
+    return;
+  }
+
+  // ── Modal soumis : créer le canal ticket ──────────────────────────────────
+  if (interaction.isModalSubmit() && interaction.customId === "ticket_modal") {
     const ok = await safeDefer(interaction);
     if (!ok) return;
 
-    const existing = [...ticketData.values()].find(
-      (t) => t.userId === member.id && t.status === "open"
-    );
-    if (existing) {
-      const ch = guild.channels.cache.get(existing.channelId);
-      return safeReply(interaction, `❌ Tu as déjà un ticket ouvert : ${ch ? ch.toString() : "introuvable"}.`);
-    }
+    const reason = interaction.fields.getTextInputValue("ticket_reason");
 
     ticketCounter++;
     const ticketNum = formatTicketNumber(ticketCounter);
@@ -199,6 +224,7 @@ client.on("interactionCreate", async (interaction) => {
       const ticketChannel = await guild.channels.create({
         name: channelName,
         type: ChannelType.GuildText,
+        topic: member.id, // on stocke l'ID du membre dans le topic pour le retrouver
         parent: category ?? null,
         permissionOverwrites: [
           { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
@@ -221,6 +247,7 @@ client.on("interactionCreate", async (interaction) => {
         ],
       });
 
+      // Accès aux rôles admin
       const adminRoles = guild.roles.cache.filter((r) =>
         r.permissions.has(PermissionFlagsBits.Administrator)
       );
@@ -232,14 +259,6 @@ client.on("interactionCreate", async (interaction) => {
         }).catch(() => {});
       }
 
-      ticketData.set(ticketChannel.id, {
-        channelId: ticketChannel.id,
-        userId: member.id,
-        ticketNumber: ticketNum,
-        status: "open",
-        openedAt: new Date(),
-      });
-
       const avatarUrl = member.user.displayAvatarURL({ size: 64 });
       const now = new Date();
       const dateStr = now.toLocaleDateString("fr-FR") + " " + now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
@@ -250,7 +269,7 @@ client.on("interactionCreate", async (interaction) => {
         .addFields(
           { name: "👤 Créé par", value: `${member}`, inline: true },
           { name: "🆔 Ticket ID", value: `#${ticketNum}`, inline: true },
-          { name: "📝 Raison", value: "Non spécifiée", inline: false },
+          { name: "📝 Raison", value: reason, inline: false },
           {
             name: "📋 Instructions",
             value: "• Décrivez votre problème en détail\n• Un membre du staff vous aidera bientôt\n• Utilisez le bouton **Fermer** pour clore ce ticket",
@@ -268,7 +287,7 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       await ticketChannel.send({ content: `${member}`, embeds: [ticketEmbed], components: [ticketRow] });
-      await sendLog(guild, "🟢 Ticket ouvert", member, ticketNum, ticketChannel);
+      await sendLog(guild, "🟢 Ticket ouvert", member, ticketNum, ticketChannel, reason);
       return safeReply(interaction, `✅ Ton ticket a été créé : ${ticketChannel}`);
     } catch (err) {
       console.error("Erreur création ticket :", err);
@@ -277,30 +296,40 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // ── Fermer un ticket ─────────────────────────────────────────────────────
-  if (customId === "ticket_close") {
+  // ── Bouton : fermer un ticket ─────────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "ticket_close") {
     const ok = await safeDefer(interaction);
     if (!ok) return;
-    const data = ticketData.get(interaction.channelId);
-    if (!data || data.status === "closed") {
-      return safeReply(interaction, "❌ Ce ticket est déjà fermé ou introuvable.");
+
+    const channel = interaction.channel;
+    const ticketNum = getTicketNumFromChannel(channel);
+
+    if (!ticketNum || !channel.name.startsWith("ticket-")) {
+      return safeReply(interaction, "❌ Ce salon n'est pas un ticket ouvert.");
     }
 
     try {
-      const channel = interaction.channel;
       const closedCategory = guild.channels.cache.get(TICKET_CATEGORY_CLOSED);
+      const userId = channel.topic;
 
-      const ticketUser = await guild.members.fetch(data.userId).catch(() => null);
-      if (ticketUser) {
-        await channel.permissionOverwrites.edit(ticketUser, { ViewChannel: false, SendMessages: false }).catch(() => {});
+      // Retirer l'accès au membre
+      if (userId) {
+        const ticketUser = await guild.members.fetch(userId).catch(() => null);
+        if (ticketUser) {
+          await channel.permissionOverwrites.edit(ticketUser, {
+            ViewChannel: false,
+            SendMessages: false,
+          }).catch(() => {});
+        }
       }
 
+      // Renommer le canal en close-XXXX
+      await channel.setName(`close-${ticketNum}`);
+
+      // Déplacer dans la catégorie closed
       if (closedCategory) {
         await channel.setParent(closedCategory.id, { lockPermissions: false });
       }
-
-      data.status = "closed";
-      ticketData.set(channel.id, data);
 
       const closedEmbed = new EmbedBuilder()
         .setTitle("🔒 Ticket fermé")
@@ -315,7 +344,7 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       await channel.send({ embeds: [closedEmbed], components: [reopenRow] });
-      await sendLog(guild, "🔴 Ticket fermé", member, data.ticketNumber, channel);
+      await sendLog(guild, "🔴 Ticket fermé", member, ticketNum, channel);
       return safeReply(interaction, "✅ Le ticket a été fermé.");
     } catch (err) {
       console.error("Erreur fermeture ticket :", err);
@@ -323,34 +352,39 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // ── Réouvrir un ticket ────────────────────────────────────────────────────
-  if (customId === "ticket_reopen") {
+  // ── Bouton : réouvrir un ticket ───────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "ticket_reopen") {
     const ok = await safeDefer(interaction);
     if (!ok) return;
-    const data = ticketData.get(interaction.channelId);
-    if (!data || data.status === "open") {
-      return safeReply(interaction, "❌ Ce ticket est déjà ouvert ou introuvable.");
+
+    const channel = interaction.channel;
+    const ticketNum = getTicketNumFromChannel(channel);
+
+    if (!ticketNum || !channel.name.startsWith("close-")) {
+      return safeReply(interaction, "❌ Ce salon n'est pas un ticket fermé.");
     }
 
     try {
-      const channel = interaction.channel;
       const openCategory = guild.channels.cache.get(TICKET_CATEGORY_OPEN);
+      const userId = channel.topic;
 
-      const ticketUser = await guild.members.fetch(data.userId).catch(() => null);
-      if (ticketUser) {
-        await channel.permissionOverwrites.edit(ticketUser, {
-          ViewChannel: true,
-          SendMessages: true,
-          ReadMessageHistory: true,
-        }).catch(() => {});
+      if (userId) {
+        const ticketUser = await guild.members.fetch(userId).catch(() => null);
+        if (ticketUser) {
+          await channel.permissionOverwrites.edit(ticketUser, {
+            ViewChannel: true,
+            SendMessages: true,
+            ReadMessageHistory: true,
+          }).catch(() => {});
+        }
       }
+
+      // Renommer en ticket-XXXX
+      await channel.setName(`ticket-${ticketNum}`);
 
       if (openCategory) {
         await channel.setParent(openCategory.id, { lockPermissions: false });
       }
-
-      data.status = "open";
-      ticketData.set(channel.id, data);
 
       const reopenEmbed = new EmbedBuilder()
         .setTitle("🔓 Ticket réouvert")
@@ -365,7 +399,7 @@ client.on("interactionCreate", async (interaction) => {
       );
 
       await channel.send({ embeds: [reopenEmbed], components: [ticketRow] });
-      await sendLog(guild, "🟢 Ticket réouvert", member, data.ticketNumber, channel);
+      await sendLog(guild, "🟢 Ticket réouvert", member, ticketNum, channel);
       return safeReply(interaction, "✅ Le ticket a été réouvert.");
     } catch (err) {
       console.error("Erreur réouverture ticket :", err);
@@ -373,8 +407,8 @@ client.on("interactionCreate", async (interaction) => {
     }
   }
 
-  // ── Supprimer un ticket ───────────────────────────────────────────────────
-  if (customId === "ticket_delete") {
+  // ── Bouton : supprimer un ticket ──────────────────────────────────────────
+  if (interaction.isButton() && interaction.customId === "ticket_delete") {
     if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
       return safeReply(interaction, "❌ Seuls les administrateurs peuvent supprimer un ticket.");
     }
@@ -383,10 +417,9 @@ client.on("interactionCreate", async (interaction) => {
       await interaction.reply({ content: "🗑️ Suppression du ticket dans 5 secondes...", flags: MessageFlags.Ephemeral });
     } catch { return; }
 
-    const data = ticketData.get(interaction.channelId);
-    if (data) {
-      await sendLog(guild, "🗑️ Ticket supprimé", member, data.ticketNumber, interaction.channel);
-      ticketData.delete(interaction.channelId);
+    const ticketNum = getTicketNumFromChannel(interaction.channel);
+    if (ticketNum) {
+      await sendLog(guild, "🗑️ Ticket supprimé", member, ticketNum, interaction.channel);
     }
 
     setTimeout(async () => {
@@ -396,18 +429,24 @@ client.on("interactionCreate", async (interaction) => {
 });
 
 // ─── FONCTION LOG ─────────────────────────────────────────────────────────────
-async function sendLog(guild, action, member, ticketNum, channel) {
+async function sendLog(guild, action, member, ticketNum, channel, reason = null) {
   if (!TICKET_LOG_CHANNEL) return;
   const logChannel = guild.channels.cache.get(TICKET_LOG_CHANNEL);
   if (!logChannel) return;
 
+  const fields = [
+    { name: "👤 Membre", value: `${member} (${member.user.tag})`, inline: true },
+    { name: "🆔 Ticket", value: `#${ticketNum}`, inline: true },
+    { name: "📌 Salon", value: channel ? `${channel}` : "Supprimé", inline: true },
+  ];
+
+  if (reason) {
+    fields.push({ name: "📝 Raison", value: reason, inline: false });
+  }
+
   const logEmbed = new EmbedBuilder()
     .setTitle(`📋 Log — ${action}`)
-    .addFields(
-      { name: "👤 Membre", value: `${member} (${member.user.tag})`, inline: true },
-      { name: "🆔 Ticket", value: `#${ticketNum}`, inline: true },
-      { name: "📌 Salon", value: channel ? `${channel}` : "Supprimé", inline: true }
-    )
+    .addFields(fields)
     .setColor(VIOLET_FONCE)
     .setFooter({ text: ".gg/xma" })
     .setTimestamp();
