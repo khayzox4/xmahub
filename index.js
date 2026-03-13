@@ -14,7 +14,14 @@ import {
   ChannelType,
   PermissionsBitField,
   MessageFlags,
+  REST,
+  Routes,
+  Colors,
 } from "discord.js";
+
+import { db } from "./db.js";
+import { giveawaysTable, giveawayParticipantsTable } from "./schema.js";
+import { eq, and } from "drizzle-orm";
 
 const TOKEN                = process.env.DISCORD_TOKEN;
 const ROLE_HOMME_ID        = process.env.DISCORD_ROLE_HOMME;
@@ -24,11 +31,18 @@ const TICKET_CATEGORY_CLOSED = process.env.DISCORD_TICKET_CATEGORY_CLOSED;
 const TICKET_LOG_CHANNEL   = process.env.DISCORD_TICKET_LOG_CHANNEL;
 const STAFF_ROLE_ID        = process.env.DISCORD_STAFF_ROLE;
 const RATING_CHANNEL_ID    = process.env.DISCORD_RATING_CHANNEL;
+const DISCORD_CLIENT_ID    = process.env.DISCORD_CLIENT_ID;
+const RATING_CHANNEL_ID    = process.env.DISCORD_RATING_CHANNEL;
 
 const VIOLET_FONCE = 0x4b0082;
 
 if (!TOKEN) {
   console.error("Erreur : DISCORD_TOKEN est manquant.");
+  process.exit(1);
+}
+
+if (!DISCORD_CLIENT_ID) {
+  console.error("Erreur : DISCORD_CLIENT_ID est manquant.");
   process.exit(1);
 }
 
@@ -39,8 +53,9 @@ const client = new Client({
     GatewayIntentBits.MessageContent,
     GatewayIntentBits.GuildMembers,
     GatewayIntentBits.DirectMessages,
+    GatewayIntentBits.GuildMessageReactions,
   ],
-  partials: [Partials.Channel, Partials.Message],
+  partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
 client.on("error", (err) => console.error("Erreur Discord :", err.message));
@@ -106,9 +121,175 @@ async function sendRatingDM(guild, userId, ticketNum) {
   }
 }
 
+const giveawayCommands = [
+  {
+    name: "creategiveaway",
+    description: "🎉 Lancer un nouveau giveaway",
+    options: [
+      {
+        name: "prix",
+        description: "Le prix du giveaway",
+        type: 3,
+        required: true,
+      },
+      {
+        name: "duree",
+        description: "Durée du giveaway en minutes",
+        type: 4,
+        required: true,
+      },
+      {
+        name: "gagnants",
+        description: "Nombre de gagnants",
+        type: 4,
+        required: true,
+      },
+      {
+        name: "conditions",
+        description: "Conditions pour participer",
+        type: 3,
+        required: false,
+      },
+    ],
+  },
+  {
+    name: "listgiveaways",
+    description: "📋 Voir tous les giveaways actifs",
+  },
+  {
+    name: "endgiveaway",
+    description: "🏁 Terminer un giveaway manuellement",
+    options: [
+      {
+        name: "id",
+        description: "ID du giveaway",
+        type: 4,
+        required: true,
+      },
+    ],
+  },
+];
+
+async function registerGiveawayCommands() {
+  const rest = new REST({ version: "10" }).setToken(TOKEN);
+  try {
+    console.log("🔄 Enregistrement des commandes giveaways...");
+    await rest.put(Routes.applicationCommands(DISCORD_CLIENT_ID), {
+      body: giveawayCommands,
+    });
+    console.log("✅ Commandes giveaways enregistrées !");
+  } catch (error) {
+    console.error("❌ Erreur enregistrement giveaways :", error);
+  }
+}
+
+function buildGiveawayEmbed(giveaway) {
+  const endsAtTimestamp = Math.floor(new Date(giveaway.endsAt).getTime() / 1000);
+  const isEnded = giveaway.status === "ended";
+
+  const embed = new EmbedBuilder()
+    .setTitle("🎉 GIVEAWAY 🎉")
+    .setColor(isEnded ? Colors.Grey : 0x9b59b6)
+    .setDescription(
+      isEnded
+        ? "Le giveaway est **terminé** !"
+        : "Réagissez avec 🎉 à ce message pour participer !"
+    )
+    .addFields(
+      { name: "🏆 Prix", value: giveaway.prize, inline: true },
+      { name: "⏱️ Durée", value: `${giveaway.durationMinutes} minute(s)`, inline: true },
+      { name: "🥇 Gagnants", value: `${giveaway.winnersCount}`, inline: true }
+    )
+    .setFooter({ text: `ID: ${giveaway.id} • Giveaway Bot` })
+    .setTimestamp(new Date(giveaway.endsAt));
+
+  if (giveaway.conditions) {
+    embed.addFields({ name: "📋 Conditions", value: giveaway.conditions });
+  }
+
+  if (!isEnded) {
+    embed.addFields({
+      name: "⏰ Se termine",
+      value: `<t:${endsAtTimestamp}:R>`,
+      inline: true,
+    });
+  }
+
+  if (isEnded && giveaway.winners?.length > 0) {
+    embed.addFields({
+      name: "🏆 Gagnant(s)",
+      value: giveaway.winners.map((w) => `🎊 **${w}**`).join("\n"),
+    });
+  }
+
+  return embed;
+}
+
+async function scheduleGiveawayEnd(giveawayId, endsAt) {
+  const delay = new Date(endsAt).getTime() - Date.now();
+  if (delay <= 0) return;
+
+  setTimeout(async () => {
+    try {
+      const [giveaway] = await db
+        .select()
+        .from(giveawaysTable)
+        .where(eq(giveawaysTable.id, giveawayId));
+
+      if (!giveaway || giveaway.status === "ended") return;
+
+      const participants = await db
+        .select()
+        .from(giveawayParticipantsTable)
+        .where(eq(giveawayParticipantsTable.giveawayId, giveawayId));
+
+      const shuffled = [...participants].sort(() => Math.random() - 0.5);
+      const selectedWinners = shuffled
+        .slice(0, giveaway.winnersCount)
+        .map((p) => p.username);
+
+      const [updated] = await db
+        .update(giveawaysTable)
+        .set({ status: "ended", winners: selectedWinners })
+        .where(eq(giveawaysTable.id, giveawayId))
+        .returning();
+
+      if (giveaway.channelId && giveaway.messageId) {
+        const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+        if (channel && channel.isTextBased()) {
+          const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+          if (message) {
+            await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Erreur fin giveaway :", err);
+    }
+  }, delay);
+}
+
 // ─── READY ───────────────────────────────────────────────────────────────────
-client.once("clientReady", () => {
+client.once("clientReady", async () => {
   console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
+  await registerGiveawayCommands();
+
+  try {
+    const activeGiveaways = await db
+      .select()
+      .from(giveawaysTable)
+      .where(eq(giveawaysTable.status, "active"));
+
+    for (const g of activeGiveaways) {
+      if (new Date(g.endsAt) > new Date()) {
+        scheduleGiveawayEnd(g.id, new Date(g.endsAt));
+      }
+    }
+
+    console.log(`⏰ ${activeGiveaways.length} giveaway(s) actif(s) récupéré(s)`);
+  } catch (err) {
+    console.error("Erreur chargement giveaways :", err);
+  }
 });
 
 // ─── COMMANDES TEXTE ──────────────────────────────────────────────────────────
@@ -183,6 +364,116 @@ client.on("messageCreate", async (message) => {
 // ─── INTERACTIONS ─────────────────────────────────────────────────────────────
 client.on("interactionCreate", async (interaction) => {
   const { guild, member } = interaction;
+    if (interaction.isChatInputCommand()) {
+    try {
+      if (interaction.commandName === "creategiveaway") {
+        const prize = interaction.options.getString("prix", true);
+        const durationMinutes = interaction.options.getInteger("duree", true);
+        const winnersCount = interaction.options.getInteger("gagnants", true);
+        const conditions = interaction.options.getString("conditions") ?? "";
+
+        await interaction.deferReply();
+
+        const endsAt = new Date(Date.now() + durationMinutes * 60 * 1000);
+
+        const [giveaway] = await db
+          .insert(giveawaysTable)
+          .values({
+            prize,
+            durationMinutes,
+            winnersCount,
+            conditions,
+            endsAt,
+            channelId: interaction.channelId,
+            guildId: interaction.guildId ?? undefined,
+          })
+          .returning();
+
+        const embed = buildGiveawayEmbed({ ...giveaway, endsAt });
+        const reply = await interaction.editReply({ embeds: [embed] });
+
+        await db
+          .update(giveawaysTable)
+          .set({ messageId: reply.id })
+          .where(eq(giveawaysTable.id, giveaway.id));
+
+        await reply.react("🎉").catch(() => {});
+        scheduleGiveawayEnd(giveaway.id, endsAt);
+        return;
+      }
+
+      if (interaction.commandName === "listgiveaways") {
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const giveaways = await db
+          .select()
+          .from(giveawaysTable)
+          .where(eq(giveawaysTable.status, "active"));
+
+        if (giveaways.length === 0) {
+          return await interaction.editReply("📋 Aucun giveaway actif en ce moment.");
+        }
+
+        const list = giveaways
+          .map((g) => {
+            const ts = Math.floor(new Date(g.endsAt).getTime() / 1000);
+            return `• **ID ${g.id}** — 🏆 ${g.prize} | 🥇 ${g.winnersCount} gagnant(s) | ⏰ <t:${ts}:R>`;
+          })
+          .join("\n");
+
+        return await interaction.editReply(`📋 **Giveaways actifs :**\n${list}`);
+      }
+
+      if (interaction.commandName === "endgiveaway") {
+        const id = interaction.options.getInteger("id", true);
+        await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+
+        const [giveaway] = await db
+          .select()
+          .from(giveawaysTable)
+          .where(eq(giveawaysTable.id, id));
+
+        if (!giveaway) return await interaction.editReply("❌ Giveaway introuvable.");
+        if (giveaway.status === "ended") return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
+
+        const participants = await db
+          .select()
+          .from(giveawayParticipantsTable)
+          .where(eq(giveawayParticipantsTable.giveawayId, id));
+
+        const shuffled = [...participants].sort(() => Math.random() - 0.5);
+        const selectedWinners = shuffled.slice(0, giveaway.winnersCount).map((p) => p.username);
+
+        const [updated] = await db
+          .update(giveawaysTable)
+          .set({ status: "ended", winners: selectedWinners })
+          .where(eq(giveawaysTable.id, id))
+          .returning();
+
+        if (giveaway.channelId && giveaway.messageId) {
+          const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+          if (channel && channel.isTextBased()) {
+            const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+            if (message) {
+              await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+            }
+          }
+        }
+
+        return await interaction.editReply(
+          `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
+        );
+      }
+    } catch (err) {
+      console.error("Erreur commande giveaway :", err);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply("❌ Une erreur s'est produite.").catch(() => {});
+      } else {
+        await interaction.reply({ content: "❌ Une erreur s'est produite.", flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+      return;
+    }
+  }
 
   // ── Notation (DM) ─────────────────────────────────────────────────────────
   if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
@@ -574,5 +865,46 @@ async function sendLog(guild, action, member, ticketNum, channel, reason = null)
 
   await logChannel.send({ embeds: [logEmbed] }).catch(console.error);
 }
+
+client.on("messageReactionAdd", async (reaction, user) => {
+  if (user.bot) return;
+  if (reaction.emoji.name !== "🎉") return;
+
+  try {
+    if (reaction.partial) await reaction.fetch();
+    if (user.partial) await user.fetch();
+
+    const messageId = reaction.message.id;
+
+    const [giveaway] = await db
+      .select()
+      .from(giveawaysTable)
+      .where(eq(giveawaysTable.messageId, messageId));
+
+    if (!giveaway || giveaway.status === "ended") return;
+
+    const existing = await db
+      .select()
+      .from(giveawayParticipantsTable)
+      .where(
+        and(
+          eq(giveawayParticipantsTable.giveawayId, giveaway.id),
+          eq(giveawayParticipantsTable.userId, user.id)
+        )
+      );
+
+    if (existing.length > 0) return;
+
+    await db.insert(giveawayParticipantsTable).values({
+      giveawayId: giveaway.id,
+      userId: user.id,
+      username: user.username ?? user.id,
+    });
+
+    console.log(`✅ ${user.username} a participé au giveaway #${giveaway.id}`);
+  } catch (err) {
+    console.error("Erreur réaction giveaway :", err);
+  }
+});
 
 client.login(TOKEN);
