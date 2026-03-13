@@ -437,6 +437,12 @@ client.on("interactionCreate", async (interaction) => {
   const { guild, member } = interaction;
     if (interaction.isChatInputCommand()) {
     try {
+          if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+      return await interaction.reply({
+        content: "❌ Seuls les administrateurs peuvent utiliser ces commandes.",
+        flags: MessageFlags.Ephemeral,
+      });
+    }
       if (interaction.commandName === "creategiveaway") {
         const prize = interaction.options.getString("prix", true);
         const durationMinutes = interaction.options.getInteger("duree", true);
