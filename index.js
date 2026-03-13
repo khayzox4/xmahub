@@ -248,101 +248,68 @@ function buildGiveawayEmbed(giveaway) {
 
 async function scheduleGiveawayEnd(giveawayId, endsAt) 
 {async function handleRerollGiveaway(interaction) {
-  const id = interaction.options.getInteger("id", true);
-  await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+  try {
+    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
 
-  const [giveaway] = await db
-    .select()
-    .from(giveawaysTable)
-    .where(eq(giveawaysTable.id, id));
+    const id = interaction.options.getInteger("id", true);
 
-  if (!giveaway) {
-    return await interaction.editReply("❌ Giveaway introuvable.");
-  }
+    const [giveaway] = await db
+      .select()
+      .from(giveawaysTable)
+      .where(eq(giveawaysTable.id, id));
 
-  const participants = await db
-    .select()
-    .from(giveawayParticipantsTable)
-    .where(eq(giveawayParticipantsTable.giveawayId, id));
+    if (!giveaway) {
+      return await interaction.editReply("❌ Giveaway introuvable.");
+    }
 
-  if (participants.length === 0) {
-    return await interaction.editReply("❌ Aucun participant pour refaire le tirage.");
-  }
+    const participants = await db
+      .select()
+      .from(giveawayParticipantsTable)
+      .where(eq(giveawayParticipantsTable.giveawayId, id));
 
-  const shuffled = [...participants].sort(() => Math.random() - 0.5);
-  const selectedWinners = shuffled
-    .slice(0, giveaway.winnersCount)
-    .map((p) => p.username);
+    if (participants.length === 0) {
+      return await interaction.editReply("❌ Aucun participant.");
+    }
 
-  const [updated] = await db
-    .update(giveawaysTable)
-    .set({
-      status: "ended",
-      winners: selectedWinners,
-    })
-    .where(eq(giveawaysTable.id, id))
-    .returning();
+    const shuffled = [...participants].sort(() => Math.random() - 0.5);
+    const winners = shuffled
+      .slice(0, giveaway.winnersCount)
+      .map((p) => p.username);
 
-  if (giveaway.channelId && giveaway.messageId) {
-    const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+    const [updated] = await db
+      .update(giveawaysTable)
+      .set({ winners })
+      .where(eq(giveawaysTable.id, id))
+      .returning();
+
+    const channel = await client.channels
+      .fetch(giveaway.channelId)
+      .catch(() => null);
+
     if (channel && channel.isTextBased()) {
-      const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+      const message = await channel.messages
+        .fetch(giveaway.messageId)
+        .catch(() => null);
+
       if (message) {
-        await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+        await message.edit({
+          embeds: [buildGiveawayEmbed(updated)],
+        });
+
         await channel.send(
-          `🔁 **Reroll du giveaway ${giveaway.prize}**\nNouveaux gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
+          `🔁 **Reroll du giveaway ${giveaway.prize}**\n🏆 Nouveaux gagnants : ${winners.join(", ")}`
         );
       }
     }
+
+    return await interaction.editReply(
+      `✅ Nouveau tirage effectué : ${winners.join(", ")}`
+    );
+  } catch (err) {
+    console.error("Erreur reroll :", err);
+    return interaction.editReply("❌ Une erreur est survenue.");
   }
-
-  return await interaction.editReply(
-    `✅ Nouveau tirage effectué pour **${giveaway.prize}**.\nGagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
-  );
 }
-  const delay = new Date(endsAt).getTime() - Date.now();
-  if (delay <= 0) return;
-
-  setTimeout(async () => {
-    try {
-      const [giveaway] = await db
-        .select()
-        .from(giveawaysTable)
-        .where(eq(giveawaysTable.id, giveawayId));
-
-      if (!giveaway || giveaway.status === "ended") return;
-
-      const participants = await db
-        .select()
-        .from(giveawayParticipantsTable)
-        .where(eq(giveawayParticipantsTable.giveawayId, giveawayId));
-
-      const shuffled = [...participants].sort(() => Math.random() - 0.5);
-      const selectedWinners = shuffled
-        .slice(0, giveaway.winnersCount)
-        .map((p) => p.username);
-
-      const [updated] = await db
-        .update(giveawaysTable)
-        .set({ status: "ended", winners: selectedWinners })
-        .where(eq(giveawaysTable.id, giveawayId))
-        .returning();
-
-      if (giveaway.channelId && giveaway.messageId) {
-        const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
-        if (channel && channel.isTextBased()) {
-          const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
-          if (message) {
-            await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
-          }
-        }
-      }
-    } catch (err) {
-      console.error("Erreur fin giveaway :", err);
-    }
-  }, delay);
-}
-
 // ─── READY ───────────────────────────────────────────────────────────────────
 client.once("clientReady", async () => {
   console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
