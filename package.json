@@ -1,11 +1,10 @@
 {
-  "name": "giveaway-bot",
+  "name": "xmahub-bot",
   "version": "1.0.0",
-  "description": "Bot Discord de giveaway",
+  "description": "Bot Discord rôles + tickets + giveaways",
   "type": "module",
   "scripts": {
-    "build": "echo 'No build step needed'",
-    "start": "node bot.js",
+    "start": "node index.js",
     "migrate": "node migrate.js"
   },
   "dependencies": {
