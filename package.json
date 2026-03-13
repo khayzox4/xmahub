@@ -4,7 +4,7 @@
   "description": "Bot Discord - Attribution de rôles Homme/Femme via boutons",
   "type": "module",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node index.js"
   },
   "dependencies": {
     "discord.js": "^14.16.3",
