@@ -32,6 +32,7 @@ const TICKET_LOG_CHANNEL   = process.env.DISCORD_TICKET_LOG_CHANNEL;
 const STAFF_ROLE_ID        = process.env.DISCORD_STAFF_ROLE;
 const RATING_CHANNEL_ID    = process.env.DISCORD_RATING_CHANNEL;
 const DISCORD_CLIENT_ID    = process.env.DISCORD_CLIENT_ID;
+const DISCORD_GUILD_ID     = process.env.DISCORD_GUILD_ID;
 
 const VIOLET_FONCE = 0x4b0082;
 
@@ -42,6 +43,11 @@ if (!TOKEN) {
 
 if (!DISCORD_CLIENT_ID) {
   console.error("Erreur : DISCORD_CLIENT_ID est manquant.");
+  process.exit(1);
+}
+
+if (!DISCORD_GUILD_ID) {
+  console.error("Erreur : DISCORD_GUILD_ID est manquant.");
   process.exit(1);
 }
 
@@ -173,9 +179,10 @@ async function registerGiveawayCommands() {
   const rest = new REST({ version: "10" }).setToken(TOKEN);
   try {
     console.log("🔄 Enregistrement des commandes giveaways...");
-    await rest.put(Routes.applicationCommands(DISCORD_CLIENT_ID), {
-      body: giveawayCommands,
-    });
+    await rest.put(
+      Routes.applicationGuildCommands(DISCORD_CLIENT_ID, DISCORD_GUILD_ID),
+      { body: giveawayCommands }
+    );
     console.log("✅ Commandes giveaways enregistrées !");
   } catch (error) {
     console.error("❌ Erreur enregistrement giveaways :", error);
