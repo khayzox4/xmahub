@@ -13,7 +13,6 @@ import {
   PermissionFlagsBits,
   ChannelType,
   PermissionsBitField,
-  MessageFlags,
   REST,
   Routes,
   Colors,
@@ -23,16 +22,16 @@ import { db } from "./db.js";
 import { giveawaysTable, giveawayParticipantsTable } from "./schema.js";
 import { eq, and } from "drizzle-orm";
 
-const TOKEN                = process.env.DISCORD_TOKEN;
-const ROLE_HOMME_ID        = process.env.DISCORD_ROLE_HOMME;
-const ROLE_FEMME_ID        = process.env.DISCORD_ROLE_FEMME;
+const TOKEN = process.env.DISCORD_TOKEN;
+const ROLE_HOMME_ID = process.env.DISCORD_ROLE_HOMME;
+const ROLE_FEMME_ID = process.env.DISCORD_ROLE_FEMME;
 const TICKET_CATEGORY_OPEN = process.env.DISCORD_TICKET_CATEGORY_OPEN;
 const TICKET_CATEGORY_CLOSED = process.env.DISCORD_TICKET_CATEGORY_CLOSED;
-const TICKET_LOG_CHANNEL   = process.env.DISCORD_TICKET_LOG_CHANNEL;
-const STAFF_ROLE_ID        = process.env.DISCORD_STAFF_ROLE;
-const RATING_CHANNEL_ID    = process.env.DISCORD_RATING_CHANNEL;
-const DISCORD_CLIENT_ID    = process.env.DISCORD_CLIENT_ID;
-const DISCORD_GUILD_ID     = process.env.DISCORD_GUILD_ID;
+const TICKET_LOG_CHANNEL = process.env.DISCORD_TICKET_LOG_CHANNEL;
+const STAFF_ROLE_ID = process.env.DISCORD_STAFF_ROLE;
+const RATING_CHANNEL_ID = process.env.DISCORD_RATING_CHANNEL;
+const DISCORD_CLIENT_ID = process.env.DISCORD_CLIENT_ID;
+const DISCORD_GUILD_ID = process.env.DISCORD_GUILD_ID;
 
 const VIOLET_FONCE = 0x4b0082;
 
@@ -63,8 +62,17 @@ const client = new Client({
   partials: [Partials.Channel, Partials.Message, Partials.Reaction],
 });
 
-client.on("error", (err) => console.error("Erreur Discord :", err.message));
-process.on("unhandledRejection", (err) => console.error("Rejection non gérée :", err?.message ?? err));
+client.on("error", (err) => {
+  console.error("Erreur Discord client :", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.error("Rejection non gérée complète :", err);
+});
+
+process.on("uncaughtException", (err) => {
+  console.error("Exception non capturée :", err);
+});
 
 let ticketCounter = 0;
 
@@ -73,27 +81,45 @@ function formatTicketNumber(n) {
 }
 
 function getTicketNumFromChannel(channel) {
+  if (!channel?.name) return null;
   const match = channel.name.match(/(?:ticket|closed)-(\d+)/);
   return match ? match[1] : null;
 }
 
-async function safeDefer(interaction) {
+function logInteraction(interaction) {
+  const name = interaction.isChatInputCommand()
+    ? `/${interaction.commandName}`
+    : interaction.isButton()
+    ? `button:${interaction.customId}`
+    : interaction.isModalSubmit()
+    ? `modal:${interaction.customId}`
+    : `type:${interaction.type}`;
+
+  console.log(
+    `[INTERACTION] ${name} | user=${interaction.user?.tag ?? "unknown"} | guild=${interaction.guild?.name ?? "DM"}`
+  );
+}
+
+async function safeDefer(interaction, label = "interaction") {
   try {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ ephemeral: true });
     return true;
-  } catch {
+  } catch (err) {
+    console.error(`[safeDefer:${label}]`, err);
     return false;
   }
 }
 
-async function safeReply(interaction, content) {
+async function safeReply(interaction, content, label = "interaction") {
   try {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({ content });
     } else {
-      await interaction.reply({ content, flags: MessageFlags.Ephemeral });
+      await interaction.reply({ content, ephemeral: true });
     }
-  } catch { /* interaction expirée */ }
+  } catch (err) {
+    console.error(`[safeReply:${label}]`, err);
+  }
 }
 
 // Envoie un DM de notation à l'utilisateur quand son ticket est fermé
@@ -106,23 +132,38 @@ async function sendRatingDM(guild, userId, ticketNum) {
       .setTitle("⭐ Comment s'est passé ton support ?")
       .setDescription(
         `Ton ticket **#${ticketNum}** sur **${guild.name}** vient d'être fermé.\n\n` +
-        "Merci de noter la qualité de l'aide reçue en cliquant sur une étoile ci-dessous."
+          "Merci de noter la qualité de l'aide reçue en cliquant sur une étoile ci-dessous."
       )
       .setColor(VIOLET_FONCE)
       .setFooter({ text: ".gg/xma" })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`rate_1_${guild.id}_${ticketNum}`).setLabel("⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_2_${guild.id}_${ticketNum}`).setLabel("⭐⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_3_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_4_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐⭐").setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId(`rate_5_${guild.id}_${ticketNum}`).setLabel("⭐⭐⭐⭐⭐").setStyle(ButtonStyle.Primary)
+      new ButtonBuilder()
+        .setCustomId(`rate_1_${guild.id}_${ticketNum}`)
+        .setLabel("⭐")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rate_2_${guild.id}_${ticketNum}`)
+        .setLabel("⭐⭐")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rate_3_${guild.id}_${ticketNum}`)
+        .setLabel("⭐⭐⭐")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rate_4_${guild.id}_${ticketNum}`)
+        .setLabel("⭐⭐⭐⭐")
+        .setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder()
+        .setCustomId(`rate_5_${guild.id}_${ticketNum}`)
+        .setLabel("⭐⭐⭐⭐⭐")
+        .setStyle(ButtonStyle.Primary)
     );
 
     await user.send({ embeds: [embed], components: [row] });
   } catch (err) {
-    console.error("Impossible d'envoyer le DM de notation :", err.message);
+    console.error("Impossible d'envoyer le DM de notation :", err);
   }
 }
 
@@ -157,12 +198,10 @@ const giveawayCommands = [
       },
     ],
   },
-
   {
     name: "listgiveaways",
     description: "📋 Voir tous les giveaways actifs",
   },
-
   {
     name: "endgiveaway",
     description: "🏁 Terminer un giveaway manuellement",
@@ -175,7 +214,6 @@ const giveawayCommands = [
       },
     ],
   },
-
   {
     name: "reroll",
     description: "🔁 Relancer le tirage d'un giveaway terminé",
@@ -276,14 +314,24 @@ async function scheduleGiveawayEnd(giveawayId, endsAt) {
         .returning();
 
       if (giveaway.channelId && giveaway.messageId) {
-        const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+        const channel = await client.channels.fetch(giveaway.channelId).catch((err) => {
+          console.error("Erreur fetch channel giveaway :", err);
+          return null;
+        });
+
         if (channel && channel.isTextBased()) {
-          const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+          const message = await channel.messages.fetch(giveaway.messageId).catch((err) => {
+            console.error("Erreur fetch message giveaway :", err);
+            return null;
+          });
+
           if (message) {
             await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
 
             await channel.send(
-              `🎉 Giveaway terminé : **${giveaway.prize}**\n🏆 Gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
+              `🎉 Giveaway terminé : **${giveaway.prize}**\n🏆 Gagnants : ${
+                selectedWinners.join(", ") || "Aucun participant"
+              }`
             );
           }
         }
@@ -296,7 +344,7 @@ async function scheduleGiveawayEnd(giveawayId, endsAt) {
 
 async function handleRerollGiveaway(interaction) {
   try {
-    await interaction.deferReply({ flags: MessageFlags.Ephemeral });
+    await interaction.deferReply({ ephemeral: true });
 
     const id = interaction.options.getInteger("id", true);
 
@@ -329,10 +377,16 @@ async function handleRerollGiveaway(interaction) {
       .where(eq(giveawaysTable.id, id))
       .returning();
 
-    const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
+    const channel = await client.channels.fetch(giveaway.channelId).catch((err) => {
+      console.error("Erreur fetch channel reroll :", err);
+      return null;
+    });
 
     if (channel && channel.isTextBased()) {
-      const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
+      const message = await channel.messages.fetch(giveaway.messageId).catch((err) => {
+        console.error("Erreur fetch message reroll :", err);
+        return null;
+      });
 
       if (message) {
         await message.edit({
@@ -350,9 +404,22 @@ async function handleRerollGiveaway(interaction) {
     );
   } catch (err) {
     console.error("Erreur reroll :", err);
-    return interaction.editReply("❌ Une erreur est survenue.");
+
+    if (interaction.deferred || interaction.replied) {
+      return interaction.editReply("❌ Une erreur est survenue.").catch((editErr) => {
+        console.error("Erreur editReply reroll :", editErr);
+      });
+    }
+
+    return interaction.reply({
+      content: "❌ Une erreur est survenue.",
+      ephemeral: true,
+    }).catch((replyErr) => {
+      console.error("Erreur reply reroll :", replyErr);
+    });
   }
 }
+
 // ─── READY ───────────────────────────────────────────────────────────────────
 client.once("clientReady", async () => {
   console.log(`✅ Bot connecté en tant que ${client.user.tag}`);
@@ -381,52 +448,62 @@ client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
   const cmd = message.content.toLowerCase().trim();
 
-  // ── !embedrôle ──
   if (cmd === "!embedrôle" || cmd === "!embedrole") {
     if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-      return message.reply({ content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)" });
+      return message.reply({
+        content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)",
+      });
     }
 
     const embed = new EmbedBuilder()
       .setTitle("✨ Choisis ton genre ✨")
       .setDescription(
         "Bienvenue sur le serveur ! Sélectionne ton genre ci-dessous en cliquant sur le bouton correspondant.\n\n" +
-        "🔵 **Homme** — Clique pour obtenir le rôle Homme\n" +
-        "🌸 **Femme** — Clique pour obtenir le rôle Femme\n\n" +
-        "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
+          "🔵 **Homme** — Clique pour obtenir le rôle Homme\n" +
+          "🌸 **Femme** — Clique pour obtenir le rôle Femme\n\n" +
+          "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
       )
       .setColor(VIOLET_FONCE)
       .setFooter({ text: "Un seul rôle de genre peut être actif à la fois." })
       .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("role_homme").setLabel("🔵 Homme").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("role_femme").setLabel("🌸 Femme").setStyle(ButtonStyle.Secondary)
+      new ButtonBuilder()
+        .setCustomId("role_homme")
+        .setLabel("🔵 Homme")
+        .setStyle(ButtonStyle.Primary),
+      new ButtonBuilder()
+        .setCustomId("role_femme")
+        .setLabel("🌸 Femme")
+        .setStyle(ButtonStyle.Secondary)
     );
 
     await message.channel.send({ embeds: [embed], components: [row] });
-    await message.delete().catch(() => {});
+    await message.delete().catch((err) => {
+      console.error("Erreur suppression message embedrole :", err);
+    });
     return;
   }
 
-  // ── !panneauticket ──
   if (cmd === "!panneauticket") {
     if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-      return message.reply({ content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)" });
+      return message.reply({
+        content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)",
+      });
     }
 
     const embed = new EmbedBuilder()
       .setTitle("🎫 Support — Créer un ticket")
       .setDescription(
         "Besoin d'aide ? Créez un ticket en cliquant sur le bouton ci-dessous.\n\n" +
-        "Un canal privé sera créé où vous pourrez discuter avec notre équipe de support.\n\n" +
-        "**📋 Comment ça marche ?**\n" +
-        "• Cliquez sur **Ouvrir un ticket**\n" +
-        "• Expliquez votre demande\n" +
-        "• Notre équipe vous répondra rapidement\n" +
-        "• Le ticket sera fermé une fois résolu\n\n" +
-        "**⚡ Temps de réponse**\nGénéralement sous 24h\n\n" +
-        "**🔒 Confidentialité**\nSeuls vous et le staff peuvent voir le ticket"
+          "Un canal privé sera créé où vous pourrez discuter avec notre équipe de support.\n\n" +
+          "**📋 Comment ça marche ?**\n" +
+          "• Cliquez sur **Ouvrir un ticket**\n" +
+          "• Expliquez votre demande\n" +
+          "• Notre équipe vous répondra rapidement\n" +
+          "• Le ticket sera fermé une fois résolu\n\n" +
+          "**⚡ Temps de réponse**\nGénéralement sous 24h\n\n" +
+          "**🔒 Confidentialité**\nSeuls vous et le staff peuvent voir le ticket"
       )
       .setColor(VIOLET_FONCE)
       .setFooter({ text: "Support XMAHUB" })
@@ -440,166 +517,198 @@ client.on("messageCreate", async (message) => {
     );
 
     await message.channel.send({ embeds: [embed], components: [row] });
-    await message.delete().catch(() => {});
+    await message.delete().catch((err) => {
+      console.error("Erreur suppression message panneau ticket :", err);
+    });
     return;
   }
 });
 
 // ─── INTERACTIONS ─────────────────────────────────────────────────────────────
 client.on("interactionCreate", async (interaction) => {
+  logInteraction(interaction);
+
   const { guild, member } = interaction;
 
   if (interaction.isChatInputCommand()) {
-  try {
-    if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
-      return await interaction.reply({
-        content: "❌ Seuls les administrateurs peuvent utiliser ces commandes.",
-        flags: MessageFlags.Ephemeral,
-      });
-    }
-
-    if (interaction.commandName === "creategiveaway") {
-      await interaction.deferReply();
-
-      const prize = interaction.options.getString("prix", true);
-      const durationMinutes = interaction.options.getInteger("duree", true);
-      const winnersCount = interaction.options.getInteger("gagnants", true);
-      const conditions = interaction.options.getString("conditions") ?? "";
-
-      const endsAt = new Date(Date.now() + durationMinutes * 60 * 1000);
-
-      const [giveaway] = await db
-        .insert(giveawaysTable)
-        .values({
-          prize,
-          durationMinutes,
-          winnersCount,
-          conditions,
-          endsAt,
-          channelId: interaction.channelId,
-          guildId: interaction.guildId ?? undefined,
-        })
-        .returning();
-
-      const embed = buildGiveawayEmbed({ ...giveaway, endsAt });
-      const reply = await interaction.editReply({ embeds: [embed] });
-
-      await db
-        .update(giveawaysTable)
-        .set({ messageId: reply.id })
-        .where(eq(giveawaysTable.id, giveaway.id));
-
-      await reply.react("🎉").catch(() => {});
-      scheduleGiveawayEnd(giveaway.id, endsAt);
-      return;
-    }
-
-    if (interaction.commandName === "listgiveaways") {
-      await interaction.deferReply({ flags: MessageFlags.Ephemeral });
-
-      const giveaways = await db
-        .select()
-        .from(giveawaysTable)
-        .where(eq(giveawaysTable.status, "active"));
-
-      if (giveaways.length === 0) {
-        return await interaction.editReply("📋 Aucun giveaway actif en ce moment.");
+    try {
+      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+        return await interaction.reply({
+          content: "❌ Seuls les administrateurs peuvent utiliser ces commandes.",
+          ephemeral: true,
+        });
       }
 
-      const list = giveaways
-        .map((g) => {
-          const ts = Math.floor(new Date(g.endsAt).getTime() / 1000);
-          return `• **ID ${g.id}** — 🏆 ${g.prize} | 🥇 ${g.winnersCount} gagnant(s) | ⏰ <t:${ts}:R>`;
-        })
-        .join("\n");
+      if (interaction.commandName === "creategiveaway") {
+        await interaction.deferReply();
 
-      return await interaction.editReply(`📋 **Giveaways actifs :**\n${list}`);
-    }
+        const prize = interaction.options.getString("prix", true);
+        const durationMinutes = interaction.options.getInteger("duree", true);
+        const winnersCount = interaction.options.getInteger("gagnants", true);
+        const conditions = interaction.options.getString("conditions") ?? "";
 
-    if (interaction.commandName === "endgiveaway") {
-      await interaction.deferReply();
+        const endsAt = new Date(Date.now() + durationMinutes * 60 * 1000);
 
-      const id = interaction.options.getInteger("id", true);
+        const [giveaway] = await db
+          .insert(giveawaysTable)
+          .values({
+            prize,
+            durationMinutes,
+            winnersCount,
+            conditions,
+            endsAt,
+            channelId: interaction.channelId,
+            guildId: interaction.guildId ?? undefined,
+          })
+          .returning();
 
-      const [giveaway] = await db
-        .select()
-        .from(giveawaysTable)
-        .where(eq(giveawaysTable.id, id));
+        const embed = buildGiveawayEmbed({ ...giveaway, endsAt });
+        const reply = await interaction.editReply({ embeds: [embed] });
 
-      if (!giveaway) {
-        return await interaction.editReply("❌ Giveaway introuvable.");
+        await db
+          .update(giveawaysTable)
+          .set({ messageId: reply.id })
+          .where(eq(giveawaysTable.id, giveaway.id));
+
+        await reply.react("🎉").catch((err) => {
+          console.error("Erreur réaction giveaway :", err);
+        });
+
+        scheduleGiveawayEnd(giveaway.id, endsAt);
+        return;
       }
 
-      if (giveaway.status === "ended") {
-        return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
+      if (interaction.commandName === "listgiveaways") {
+        await interaction.deferReply({ ephemeral: true });
+
+        const giveaways = await db
+          .select()
+          .from(giveawaysTable)
+          .where(eq(giveawaysTable.status, "active"));
+
+        if (giveaways.length === 0) {
+          return await interaction.editReply("📋 Aucun giveaway actif en ce moment.");
+        }
+
+        const list = giveaways
+          .map((g) => {
+            const ts = Math.floor(new Date(g.endsAt).getTime() / 1000);
+            return `• **ID ${g.id}** — 🏆 ${g.prize} | 🥇 ${g.winnersCount} gagnant(s) | ⏰ <t:${ts}:R>`;
+          })
+          .join("\n");
+
+        return await interaction.editReply(`📋 **Giveaways actifs :**\n${list}`);
       }
 
-      const participants = await db
-        .select()
-        .from(giveawayParticipantsTable)
-        .where(eq(giveawayParticipantsTable.giveawayId, id));
+      if (interaction.commandName === "endgiveaway") {
+        await interaction.deferReply();
 
-      const shuffled = [...participants].sort(() => Math.random() - 0.5);
-      const selectedWinners = shuffled
-        .slice(0, giveaway.winnersCount)
-        .map((p) => p.username);
+        const id = interaction.options.getInteger("id", true);
 
-      const [updated] = await db
-        .update(giveawaysTable)
-        .set({ status: "ended", winners: selectedWinners })
-        .where(eq(giveawaysTable.id, id))
-        .returning();
+        const [giveaway] = await db
+          .select()
+          .from(giveawaysTable)
+          .where(eq(giveawaysTable.id, id));
 
-      if (giveaway.channelId && giveaway.messageId) {
-        const channel = await client.channels.fetch(giveaway.channelId).catch(() => null);
-        if (channel && channel.isTextBased()) {
-          const message = await channel.messages.fetch(giveaway.messageId).catch(() => null);
-          if (message) {
-            await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+        if (!giveaway) {
+          return await interaction.editReply("❌ Giveaway introuvable.");
+        }
+
+        if (giveaway.status === "ended") {
+          return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
+        }
+
+        const participants = await db
+          .select()
+          .from(giveawayParticipantsTable)
+          .where(eq(giveawayParticipantsTable.giveawayId, id));
+
+        const shuffled = [...participants].sort(() => Math.random() - 0.5);
+        const selectedWinners = shuffled
+          .slice(0, giveaway.winnersCount)
+          .map((p) => p.username);
+
+        const [updated] = await db
+          .update(giveawaysTable)
+          .set({ status: "ended", winners: selectedWinners })
+          .where(eq(giveawaysTable.id, id))
+          .returning();
+
+        if (giveaway.channelId && giveaway.messageId) {
+          const channel = await client.channels.fetch(giveaway.channelId).catch((err) => {
+            console.error("Erreur fetch channel endgiveaway :", err);
+            return null;
+          });
+
+          if (channel && channel.isTextBased()) {
+            const message = await channel.messages.fetch(giveaway.messageId).catch((err) => {
+              console.error("Erreur fetch message endgiveaway :", err);
+              return null;
+            });
+
+            if (message) {
+              await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
+            }
           }
         }
+
+        return await interaction.editReply(
+          `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${
+            selectedWinners.join(", ") || "Aucun participant"
+          }`
+        );
       }
 
-      return await interaction.editReply(
-        `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${selectedWinners.join(", ") || "Aucun participant"}`
-      );
-    }
+      if (interaction.commandName === "reroll") {
+        return await handleRerollGiveaway(interaction);
+      }
+    } catch (err) {
+      console.error("Erreur commande giveaway :", err);
 
-    if (interaction.commandName === "reroll") {
-      return await handleRerollGiveaway(interaction);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply("❌ Une erreur s'est produite.").catch((editErr) => {
+          console.error("Erreur editReply commande giveaway :", editErr);
+        });
+      } else {
+        await interaction.reply({
+          content: "❌ Une erreur s'est produite.",
+          ephemeral: true,
+        }).catch((replyErr) => {
+          console.error("Erreur reply commande giveaway :", replyErr);
+        });
+      }
+      return;
     }
-  } catch (err) {
-    console.error("Erreur commande giveaway :", err);
-    if (interaction.deferred || interaction.replied) {
-      await interaction.editReply("❌ Une erreur s'est produite.").catch(() => {});
-    } else {
-      await interaction.reply({
-        content: "❌ Une erreur s'est produite.",
-        flags: MessageFlags.Ephemeral,
-      }).catch(() => {});
-    }
-    return;
   }
-}
 
   // ── Notation (DM)
   if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
     const parts = interaction.customId.split("_");
-    const stars = parseInt(parts[1]);
+    const stars = parseInt(parts[1], 10);
     const guildId = parts[2];
     const ticketNum = parts[3];
 
-    try {
-      await interaction.update({ components: [] }); // retire les boutons
-    } catch { /* DM peut-être expiré */ }
+    let acknowledged = false;
 
-    // Poster la notation dans le salon dédié
     try {
-      const targetGuild = await client.guilds.fetch(guildId).catch(() => null);
+      await interaction.update({ components: [] });
+      acknowledged = true;
+    } catch (err) {
+      console.error("[rate update]", err);
+    }
+
+    try {
+      const targetGuild = await client.guilds.fetch(guildId).catch((err) => {
+        console.error("Erreur fetch guild notation :", err);
+        return null;
+      });
       if (!targetGuild) return;
 
       const ratingChannel = targetGuild.channels.cache.get(RATING_CHANNEL_ID);
-      if (!ratingChannel) return;
+      if (!ratingChannel) {
+        console.error("Salon de notation introuvable.");
+        return;
+      }
 
       const starsDisplay = "⭐".repeat(stars);
       const ratingEmbed = new EmbedBuilder()
@@ -616,58 +725,94 @@ client.on("interactionCreate", async (interaction) => {
 
       await ratingChannel.send({ embeds: [ratingEmbed] });
 
-      // Confirmer à l'utilisateur en DM
-      await interaction.followUp({
-        content: `✅ Merci pour ta note de **${stars}/5** ! Ton avis nous aide à améliorer notre support.`,
-        flags: MessageFlags.Ephemeral,
-      }).catch(() => {
-        interaction.user.send(`✅ Merci pour ta note de **${stars}/5** ! Ton avis nous aide à améliorer notre support.`).catch(() => {});
-      });
+      if (acknowledged) {
+        await interaction.followUp({
+          content: `✅ Merci pour ta note de **${stars}/5** ! Ton avis nous aide à améliorer notre support.`,
+          ephemeral: true,
+        }).catch((err) => {
+          console.error("[rate followUp]", err);
+        });
+      } else {
+        await interaction.user.send(
+          `✅ Merci pour ta note de **${stars}/5** ! Ton avis nous aide à améliorer notre support.`
+        ).catch((err) => {
+          console.error("[rate DM fallback]", err);
+        });
+      }
     } catch (err) {
-      console.error("Erreur notation :", err.message);
+      console.error("Erreur notation :", err);
     }
     return;
   }
 
-  // ── Rôles genre (boutons, uniquement en serveur) ──────────────────────────
+  // ── Rôles genre
   if (interaction.isButton() && (interaction.customId === "role_homme" || interaction.customId === "role_femme")) {
     if (!guild) return;
-    const ok = await safeDefer(interaction);
+
+    const ok = await safeDefer(interaction, "role_buttons");
     if (!ok) return;
+
     try {
       const roleHomme = await guild.roles.fetch(ROLE_HOMME_ID);
       const roleFemme = await guild.roles.fetch(ROLE_FEMME_ID);
-      if (!roleHomme || !roleFemme) return safeReply(interaction, "❌ Rôles introuvables. Contacte un administrateur.");
+
+      if (!roleHomme || !roleFemme) {
+        return safeReply(
+          interaction,
+          "❌ Rôles introuvables. Contacte un administrateur.",
+          "role_fetch"
+        );
+      }
 
       if (interaction.customId === "role_homme") {
-        if (member.roles.cache.has(ROLE_HOMME_ID)) return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Homme**.");
-        await member.roles.remove(roleFemme).catch(() => {});
+        if (member.roles.cache.has(ROLE_HOMME_ID)) {
+          return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Homme**.", "role_homme_already");
+        }
+
+        await member.roles.remove(roleFemme).catch((err) => {
+          console.error("Erreur retrait role femme :", err);
+        });
         await member.roles.add(roleHomme);
-        return safeReply(interaction, "✅ Le rôle **Homme** t'a été attribué !");
+
+        return safeReply(interaction, "✅ Le rôle **Homme** t'a été attribué !", "role_homme_done");
       }
+
       if (interaction.customId === "role_femme") {
-        if (member.roles.cache.has(ROLE_FEMME_ID)) return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Femme**.");
-        await member.roles.remove(roleHomme).catch(() => {});
+        if (member.roles.cache.has(ROLE_FEMME_ID)) {
+          return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Femme**.", "role_femme_already");
+        }
+
+        await member.roles.remove(roleHomme).catch((err) => {
+          console.error("Erreur retrait role homme :", err);
+        });
         await member.roles.add(roleFemme);
-        return safeReply(interaction, "✅ Le rôle **Femme** t'a été attribué !");
+
+        return safeReply(interaction, "✅ Le rôle **Femme** t'a été attribué !", "role_femme_done");
       }
     } catch (err) {
-      console.error(err);
-      return safeReply(interaction, "❌ Une erreur est survenue lors de l'attribution du rôle.");
+      console.error("Erreur attribution rôle :", err);
+      return safeReply(
+        interaction,
+        "❌ Une erreur est survenue lors de l'attribution du rôle.",
+        "role_error"
+      );
     }
   }
 
-  // ── Bouton : ouvrir un ticket → affiche le modal ──────────────────────────
+  // ── Bouton : ouvrir un ticket
   if (interaction.isButton() && interaction.customId === "ticket_open") {
     if (!guild) return;
 
     const existing = guild.channels.cache.find(
       (c) => c.name.startsWith("ticket-") && c.topic === member.id
     );
+
     if (existing) {
       return interaction.reply({
         content: `❌ Tu as déjà un ticket ouvert : ${existing}`,
-        flags: MessageFlags.Ephemeral,
+        ephemeral: true,
+      }).catch((err) => {
+        console.error("Erreur reply ticket_open existing :", err);
       });
     }
 
@@ -684,14 +829,18 @@ client.on("interactionCreate", async (interaction) => {
       .setMaxLength(500);
 
     modal.addComponents(new ActionRowBuilder().addComponents(reasonInput));
-    await interaction.showModal(modal);
+
+    await interaction.showModal(modal).catch((err) => {
+      console.error("Erreur showModal ticket_open :", err);
+    });
     return;
   }
 
-  // ── Modal soumis : créer le canal ticket ──────────────────────────────────
+  // ── Modal soumis : créer le canal ticket
   if (interaction.isModalSubmit() && interaction.customId === "ticket_modal") {
     if (!guild) return;
-    const ok = await safeDefer(interaction);
+
+    const ok = await safeDefer(interaction, "ticket_modal");
     if (!ok) return;
 
     const reason = interaction.fields.getTextInputValue("ticket_reason");
@@ -703,7 +852,6 @@ client.on("interactionCreate", async (interaction) => {
     try {
       const category = guild.channels.cache.get(TICKET_CATEGORY_OPEN);
 
-      // Permissions de base
       const permOverwrites = [
         { id: guild.id, deny: [PermissionsBitField.Flags.ViewChannel] },
         {
@@ -724,7 +872,6 @@ client.on("interactionCreate", async (interaction) => {
         },
       ];
 
-      // Rôle staff
       if (STAFF_ROLE_ID) {
         permOverwrites.push({
           id: STAFF_ROLE_ID,
@@ -744,32 +891,40 @@ client.on("interactionCreate", async (interaction) => {
         permissionOverwrites: permOverwrites,
       });
 
-      // Accès aux rôles admin
-      const adminRoles = guild.roles.cache.filter((r) =>
-        r.permissions.has(PermissionFlagsBits.Administrator) && r.id !== STAFF_ROLE_ID
+      const adminRoles = guild.roles.cache.filter(
+        (r) => r.permissions.has(PermissionFlagsBits.Administrator) && r.id !== STAFF_ROLE_ID
       );
+
       for (const [, role] of adminRoles) {
         await ticketChannel.permissionOverwrites.create(role, {
           ViewChannel: true,
           SendMessages: true,
           ReadMessageHistory: true,
-        }).catch(() => {});
+        }).catch((err) => {
+          console.error(`Erreur overwrite admin ${role.name} :`, err);
+        });
       }
 
       const avatarUrl = member.user.displayAvatarURL({ size: 64 });
       const now = new Date();
-      const dateStr = now.toLocaleDateString("fr-FR") + " " + now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      const dateStr =
+        now.toLocaleDateString("fr-FR") +
+        " " +
+        now.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
 
       const ticketEmbed = new EmbedBuilder()
         .setTitle("🎫 Nouveau ticket créé")
-        .setDescription(`Bonjour ${member} ! Merci d'avoir créé un ticket. Un membre du staff vous aidera bientôt.`)
+        .setDescription(
+          `Bonjour ${member} ! Merci d'avoir créé un ticket. Un membre du staff vous aidera bientôt.`
+        )
         .addFields(
           { name: "👤 Créé par", value: `${member}`, inline: true },
           { name: "🆔 Ticket ID", value: `#${ticketNum}`, inline: true },
           { name: "📝 Raison", value: reason, inline: false },
           {
             name: "📋 Instructions",
-            value: "• Décrivez votre problème en détail\n• Un membre du staff vous aidera bientôt\n• Utilisez le bouton **Fermer** pour clore ce ticket",
+            value:
+              "• Décrivez votre problème en détail\n• Un membre du staff vous aidera bientôt\n• Utilisez le bouton **Fermer** pour clore ce ticket",
             inline: false,
           }
         )
@@ -779,12 +934,18 @@ client.on("interactionCreate", async (interaction) => {
         .setTimestamp();
 
       const ticketRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 Fermer le ticket").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId("ticket_delete").setLabel("🗑️ Supprimer").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder()
+          .setCustomId("ticket_close")
+          .setLabel("🔒 Fermer le ticket")
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId("ticket_delete")
+          .setLabel("🗑️ Supprimer")
+          .setStyle(ButtonStyle.Secondary)
       );
 
-      // Ping du rôle staff + membre
       const staffPing = STAFF_ROLE_ID ? `<@&${STAFF_ROLE_ID}> ` : "";
+
       await ticketChannel.send({
         content: `${staffPing}${member}`,
         embeds: [ticketEmbed],
@@ -793,49 +954,63 @@ client.on("interactionCreate", async (interaction) => {
 
       await sendLog(guild, "🟢 Ticket ouvert", member, ticketNum, ticketChannel, reason);
 
-      // Bouton lien direct vers le ticket
       const goRow = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
           .setLabel("📂 Aller au ticket")
           .setStyle(ButtonStyle.Link)
           .setURL(`https://discord.com/channels/${guild.id}/${ticketChannel.id}`)
       );
-      try {
-        await interaction.editReply({ content: `✅ Ton ticket **#${ticketNum}** a été créé !`, components: [goRow] });
-      } catch { /* interaction expirée */ }
+
+      await interaction.editReply({
+        content: `✅ Ton ticket **#${ticketNum}** a été créé !`,
+        components: [goRow],
+      }).catch((err) => {
+        console.error("Erreur editReply ticket_modal :", err);
+      });
+
       return;
     } catch (err) {
       console.error("Erreur création ticket :", err);
       ticketCounter--;
-      return safeReply(interaction, "❌ Impossible de créer le ticket. Vérifie les permissions du bot.");
+      return safeReply(
+        interaction,
+        "❌ Impossible de créer le ticket. Vérifie les permissions du bot.",
+        "ticket_modal_error"
+      );
     }
   }
 
-  // ── Bouton : fermer un ticket ─────────────────────────────────────────────
+  // ── Bouton : fermer un ticket
   if (interaction.isButton() && interaction.customId === "ticket_close") {
     if (!guild) return;
-    const ok = await safeDefer(interaction);
+
+    const ok = await safeDefer(interaction, "ticket_close");
     if (!ok) return;
 
     const channel = interaction.channel;
     const ticketNum = getTicketNumFromChannel(channel);
 
     if (!ticketNum || !channel.name.startsWith("ticket-")) {
-      return safeReply(interaction, "❌ Ce salon n'est pas un ticket ouvert.");
+      return safeReply(interaction, "❌ Ce salon n'est pas un ticket ouvert.", "ticket_close_invalid");
     }
 
     try {
       const closedCategory = guild.channels.cache.get(TICKET_CATEGORY_CLOSED);
       const userId = channel.topic;
 
-      // Retirer l'accès au membre
       if (userId) {
-        const ticketUser = await guild.members.fetch(userId).catch(() => null);
+        const ticketUser = await guild.members.fetch(userId).catch((err) => {
+          console.error("Erreur fetch membre ticket_close :", err);
+          return null;
+        });
+
         if (ticketUser) {
           await channel.permissionOverwrites.edit(ticketUser, {
             ViewChannel: false,
             SendMessages: false,
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error("Erreur edit perms fermeture ticket :", err);
+          });
         }
       }
 
@@ -853,36 +1028,50 @@ client.on("interactionCreate", async (interaction) => {
         .setTimestamp();
 
       const reopenRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("ticket_reopen").setLabel("🔓 Réouvrir").setStyle(ButtonStyle.Success),
-        new ButtonBuilder().setCustomId("ticket_delete").setLabel("🗑️ Supprimer").setStyle(ButtonStyle.Danger)
+        new ButtonBuilder()
+          .setCustomId("ticket_reopen")
+          .setLabel("🔓 Réouvrir")
+          .setStyle(ButtonStyle.Success),
+        new ButtonBuilder()
+          .setCustomId("ticket_delete")
+          .setLabel("🗑️ Supprimer")
+          .setStyle(ButtonStyle.Danger)
       );
 
       await channel.send({ embeds: [closedEmbed], components: [reopenRow] });
       await sendLog(guild, "🔴 Ticket fermé", member, ticketNum, channel);
 
-      // Envoyer le DM de notation au membre
       if (userId) {
         await sendRatingDM(guild, userId, ticketNum);
       }
 
-      return safeReply(interaction, "✅ Le ticket a été fermé. Une notification de notation a été envoyée au membre.");
+      return safeReply(
+        interaction,
+        "✅ Le ticket a été fermé. Une notification de notation a été envoyée au membre.",
+        "ticket_close_done"
+      );
     } catch (err) {
       console.error("Erreur fermeture ticket :", err);
-      return safeReply(interaction, "❌ Une erreur est survenue lors de la fermeture.");
+      return safeReply(
+        interaction,
+        "❌ Une erreur est survenue lors de la fermeture.",
+        "ticket_close_error"
+      );
     }
   }
 
-  // ── Bouton : réouvrir un ticket ───────────────────────────────────────────
+  // ── Bouton : réouvrir un ticket
   if (interaction.isButton() && interaction.customId === "ticket_reopen") {
     if (!guild) return;
-    const ok = await safeDefer(interaction);
+
+    const ok = await safeDefer(interaction, "ticket_reopen");
     if (!ok) return;
 
     const channel = interaction.channel;
     const ticketNum = getTicketNumFromChannel(channel);
 
     if (!ticketNum || !channel.name.startsWith("closed-")) {
-      return safeReply(interaction, "❌ Ce salon n'est pas un ticket fermé.");
+      return safeReply(interaction, "❌ Ce salon n'est pas un ticket fermé.", "ticket_reopen_invalid");
     }
 
     try {
@@ -890,13 +1079,19 @@ client.on("interactionCreate", async (interaction) => {
       const userId = channel.topic;
 
       if (userId) {
-        const ticketUser = await guild.members.fetch(userId).catch(() => null);
+        const ticketUser = await guild.members.fetch(userId).catch((err) => {
+          console.error("Erreur fetch membre ticket_reopen :", err);
+          return null;
+        });
+
         if (ticketUser) {
           await channel.permissionOverwrites.edit(ticketUser, {
             ViewChannel: true,
             SendMessages: true,
             ReadMessageHistory: true,
-          }).catch(() => {});
+          }).catch((err) => {
+            console.error("Erreur edit perms reouverture ticket :", err);
+          });
         }
       }
 
@@ -914,29 +1109,51 @@ client.on("interactionCreate", async (interaction) => {
         .setTimestamp();
 
       const ticketRow = new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId("ticket_close").setLabel("🔒 Fermer le ticket").setStyle(ButtonStyle.Danger),
-        new ButtonBuilder().setCustomId("ticket_delete").setLabel("🗑️ Supprimer").setStyle(ButtonStyle.Secondary)
+        new ButtonBuilder()
+          .setCustomId("ticket_close")
+          .setLabel("🔒 Fermer le ticket")
+          .setStyle(ButtonStyle.Danger),
+        new ButtonBuilder()
+          .setCustomId("ticket_delete")
+          .setLabel("🗑️ Supprimer")
+          .setStyle(ButtonStyle.Secondary)
       );
 
       await channel.send({ embeds: [reopenEmbed], components: [ticketRow] });
       await sendLog(guild, "🟢 Ticket réouvert", member, ticketNum, channel);
-      return safeReply(interaction, "✅ Le ticket a été réouvert.");
+
+      return safeReply(interaction, "✅ Le ticket a été réouvert.", "ticket_reopen_done");
     } catch (err) {
       console.error("Erreur réouverture ticket :", err);
-      return safeReply(interaction, "❌ Une erreur est survenue lors de la réouverture.");
+      return safeReply(
+        interaction,
+        "❌ Une erreur est survenue lors de la réouverture.",
+        "ticket_reopen_error"
+      );
     }
   }
 
-  // ── Bouton : supprimer un ticket ──────────────────────────────────────────
+  // ── Bouton : supprimer un ticket
   if (interaction.isButton() && interaction.customId === "ticket_delete") {
     if (!guild) return;
+
     if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-      return safeReply(interaction, "❌ Seuls les administrateurs peuvent supprimer un ticket.");
+      return safeReply(
+        interaction,
+        "❌ Seuls les administrateurs peuvent supprimer un ticket.",
+        "ticket_delete_no_perm"
+      );
     }
 
     try {
-      await interaction.reply({ content: "🗑️ Suppression du ticket dans 5 secondes...", flags: MessageFlags.Ephemeral });
-    } catch { return; }
+      await interaction.reply({
+        content: "🗑️ Suppression du ticket dans 5 secondes...",
+        ephemeral: true,
+      });
+    } catch (err) {
+      console.error("Erreur reply ticket_delete :", err);
+      return;
+    }
 
     const ticketNum = getTicketNumFromChannel(interaction.channel);
     if (ticketNum) {
@@ -944,7 +1161,9 @@ client.on("interactionCreate", async (interaction) => {
     }
 
     setTimeout(async () => {
-      await interaction.channel.delete().catch(console.error);
+      await interaction.channel.delete().catch((err) => {
+        console.error("Erreur suppression channel ticket :", err);
+      });
     }, 5000);
   }
 });
@@ -952,6 +1171,7 @@ client.on("interactionCreate", async (interaction) => {
 // ─── FONCTION LOG ─────────────────────────────────────────────────────────────
 async function sendLog(guild, action, member, ticketNum, channel, reason = null) {
   if (!TICKET_LOG_CHANNEL) return;
+
   const logChannel = guild.channels.cache.get(TICKET_LOG_CHANNEL);
   if (!logChannel) return;
 
@@ -961,7 +1181,9 @@ async function sendLog(guild, action, member, ticketNum, channel, reason = null)
     { name: "📌 Salon", value: channel ? `${channel}` : "Supprimé", inline: true },
   ];
 
-  if (reason) fields.push({ name: "📝 Raison", value: reason, inline: false });
+  if (reason) {
+    fields.push({ name: "📝 Raison", value: reason, inline: false });
+  }
 
   const logEmbed = new EmbedBuilder()
     .setTitle(`📋 Log — ${action}`)
@@ -970,7 +1192,9 @@ async function sendLog(guild, action, member, ticketNum, channel, reason = null)
     .setFooter({ text: ".gg/xma" })
     .setTimestamp();
 
-  await logChannel.send({ embeds: [logEmbed] }).catch(console.error);
+  await logChannel.send({ embeds: [logEmbed] }).catch((err) => {
+    console.error("Erreur envoi log :", err);
+  });
 }
 
 client.on("messageReactionAdd", async (reaction, user) => {
