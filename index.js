@@ -226,6 +226,42 @@ const giveawayCommands = [
       },
     ],
   },
+  {
+    name: "rename",
+    description: "✏️ Renommer un ticket",
+    options: [
+      {
+        name: "nom",
+        description: "Nouveau nom du ticket",
+        type: 3,
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "adduser",
+    description: "➕ Ajouter un utilisateur à un ticket",
+    options: [
+      {
+        name: "utilisateur",
+        description: "Utilisateur à ajouter au ticket",
+        type: 6,
+        required: true,
+      },
+    ],
+  },
+  {
+    name: "removeuser",
+    description: "➖ Retirer un utilisateur d'un ticket",
+    options: [
+      {
+        name: "utilisateur",
+        description: "Utilisateur à retirer du ticket",
+        type: 6,
+        required: true,
+      },
+    ],
+  },
 ];
 
 async function registerGiveawayCommands() {
@@ -530,13 +566,193 @@ client.on("interactionCreate", async (interaction) => {
 
   const { guild, member } = interaction;
 
-  if (interaction.isChatInputCommand()) {
-    try {
-      if (!interaction.memberPermissions?.has(PermissionFlagsBits.Administrator)) {
+if (interaction.isChatInputCommand()) {
+  try {
+    const isAdmin = interaction.memberPermissions?.has(PermissionFlagsBits.Administrator);
+    const hasStaffRole = STAFF_ROLE_ID ? member.roles.cache.has(STAFF_ROLE_ID) : false;
+
+    if (["rename", "adduser", "removeuser"].includes(interaction.commandName)) {
+      if (!isAdmin && !hasStaffRole) {
+        return await interaction.reply({
+          content: "❌ Seuls le staff et les administrateurs peuvent utiliser cette commande.",
+          ephemeral: true,
+        });
+      }
+    } else {
+      if (!isAdmin) {
         return await interaction.reply({
           content: "❌ Seuls les administrateurs peuvent utiliser ces commandes.",
           ephemeral: true,
         });
+      }
+    }
+
+            if (interaction.commandName === "rename") {
+        await interaction.deferReply({ ephemeral: true });
+
+        const channel = interaction.channel;
+        const newNameRaw = interaction.options.getString("nom", true);
+
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
+        }
+
+        const ticketNum = getTicketNumFromChannel(channel);
+
+        if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
+          return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
+        }
+
+                    if (interaction.commandName === "adduser") {
+        await interaction.deferReply({ ephemeral: true });
+
+        const channel = interaction.channel;
+        const targetUser = interaction.options.getUser("utilisateur", true);
+
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
+        }
+
+        const ticketNum = getTicketNumFromChannel(channel);
+
+        if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
+          return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
+        }
+
+        const targetMember = await guild.members.fetch(targetUser.id).catch((err) => {
+          console.error("Erreur fetch membre adduser :", err);
+          return null;
+        });
+
+        if (!targetMember) {
+          return await interaction.editReply("❌ Impossible de trouver cet utilisateur sur le serveur.");
+        }
+
+        const alreadyHasAccess = channel.permissionsFor(targetMember)?.has([
+          PermissionsBitField.Flags.ViewChannel,
+          PermissionsBitField.Flags.SendMessages,
+          PermissionsBitField.Flags.ReadMessageHistory,
+        ]);
+
+        if (alreadyHasAccess) {
+          return await interaction.editReply(`ℹ️ ${targetMember} a déjà accès à ce ticket.`);
+        }
+
+        await channel.permissionOverwrites.edit(targetMember, {
+          ViewChannel: true,
+          SendMessages: true,
+          ReadMessageHistory: true,
+        });
+
+        await sendLog(
+          guild,
+          "➕ Utilisateur ajouté au ticket",
+          member,
+          ticketNum,
+          channel,
+          `Utilisateur ajouté : ${targetMember.user.tag}`
+        );
+
+        await channel.send(`➕ ${targetMember} a été ajouté au ticket par ${member}.`);
+
+        return await interaction.editReply(`✅ ${targetMember} a bien été ajouté au ticket.`);
+      }
+
+                    if (interaction.commandName === "removeuser") {
+        await interaction.deferReply({ ephemeral: true });
+
+        const channel = interaction.channel;
+        const targetUser = interaction.options.getUser("utilisateur", true);
+
+        if (!channel || channel.type !== ChannelType.GuildText) {
+          return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
+        }
+
+        const ticketNum = getTicketNumFromChannel(channel);
+
+        if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
+          return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
+        }
+
+        const ownerId = channel.topic;
+
+        if (targetUser.id === ownerId) {
+          return await interaction.editReply("❌ Tu ne peux pas retirer le créateur du ticket.");
+        }
+
+        if (targetUser.id === client.user.id) {
+          return await interaction.editReply("❌ Tu ne peux pas retirer le bot du ticket.");
+        }
+
+        if (STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID) && targetUser.id === interaction.user.id) {
+          return await interaction.editReply("❌ Tu ne peux pas te retirer toi-même avec cette commande.");
+        }
+
+        const targetMember = await guild.members.fetch(targetUser.id).catch((err) => {
+          console.error("Erreur fetch membre removeuser :", err);
+          return null;
+        });
+
+        if (!targetMember) {
+          return await interaction.editReply("❌ Impossible de trouver cet utilisateur sur le serveur.");
+        }
+
+        await channel.permissionOverwrites.delete(targetMember).catch(async () => {
+          await channel.permissionOverwrites.edit(targetMember, {
+            ViewChannel: false,
+            SendMessages: false,
+            ReadMessageHistory: false,
+          });
+        });
+
+        await sendLog(
+          guild,
+          "➖ Utilisateur retiré du ticket",
+          member,
+          ticketNum,
+          channel,
+          `Utilisateur retiré : ${targetMember.user.tag}`
+        );
+
+        await channel.send(`➖ ${targetMember} a été retiré du ticket par ${member}.`);
+
+        return await interaction.editReply(`✅ ${targetMember} a bien été retiré du ticket.`);
+      }
+
+        const sanitized = newNameRaw
+          .toLowerCase()
+          .normalize("NFD")
+          .replace(/[\u0300-\u036f]/g, "")
+          .replace(/[^a-z0-9- ]/g, "")
+          .trim()
+          .replace(/\s+/g, "-")
+          .replace(/-+/g, "-")
+          .slice(0, 80);
+
+        if (!sanitized) {
+          return await interaction.editReply("❌ Le nom fourni est invalide.");
+        }
+
+        const prefix = channel.name.startsWith("closed-") ? "closed" : "ticket";
+        const finalName = `${prefix}-${ticketNum}-${sanitized}`;
+
+        try {
+          await channel.setName(finalName);
+
+          await sendLog(
+            guild,
+            "✏️ Ticket renommé",
+            member,
+            ticketNum,
+            channel,
+            `Nouveau nom : ${finalName}`
+          );
+
+          return await interaction.editReply(`✅ Le ticket a été renommé en **${finalName}**.`);
+        } catch (err) {
+          console.error("Erreur rename ticket :", err);
+          return await interaction.editReply("❌ Impossible de renommer ce ticket.");
+        }
       }
 
       if (interaction.commandName === "creategiveaway") {
