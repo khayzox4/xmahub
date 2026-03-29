@@ -587,316 +587,306 @@ if (interaction.isChatInputCommand()) {
       }
     }
 
-            if (interaction.commandName === "rename") {
-        await interaction.deferReply({ ephemeral: true });
+    if (interaction.commandName === "rename") {
+      await interaction.deferReply({ ephemeral: true });
 
-        const channel = interaction.channel;
-        const newNameRaw = interaction.options.getString("nom", true);
+      const channel = interaction.channel;
+      const newNameRaw = interaction.options.getString("nom", true);
 
-        if (!channel || channel.type !== ChannelType.GuildText) {
-          return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
-        }
+      if (!channel || channel.type !== ChannelType.GuildText) {
+        return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
+      }
 
-        const ticketNum = getTicketNumFromChannel(channel);
+      const ticketNum = getTicketNumFromChannel(channel);
 
-        if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
-          return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
-        }
+      if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
+        return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
+      }
 
-                    if (interaction.commandName === "adduser") {
-        await interaction.deferReply({ ephemeral: true });
+      const sanitized = newNameRaw
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9- ]/g, "")
+        .trim()
+        .replace(/\s+/g, "-")
+        .replace(/-+/g, "-")
+        .slice(0, 80);
 
-        const channel = interaction.channel;
-        const targetUser = interaction.options.getUser("utilisateur", true);
+      if (!sanitized) {
+        return await interaction.editReply("❌ Le nom fourni est invalide.");
+      }
 
-        if (!channel || channel.type !== ChannelType.GuildText) {
-          return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
-        }
+      const prefix = channel.name.startsWith("closed-") ? "closed" : "ticket";
+      const finalName = `${prefix}-${ticketNum}-${sanitized}`;
 
-        const ticketNum = getTicketNumFromChannel(channel);
+      await channel.setName(finalName);
 
-        if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
-          return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
-        }
+      await sendLog(
+        guild,
+        "✏️ Ticket renommé",
+        member,
+        ticketNum,
+        channel,
+        `Nouveau nom : ${finalName}`
+      );
 
-        const targetMember = await guild.members.fetch(targetUser.id).catch((err) => {
-          console.error("Erreur fetch membre adduser :", err);
+      return await interaction.editReply(`✅ Le ticket a été renommé en **${finalName}**.`);
+    }
+
+    if (interaction.commandName === "adduser") {
+      await interaction.deferReply({ ephemeral: true });
+
+      const channel = interaction.channel;
+      const targetUser = interaction.options.getUser("utilisateur", true);
+
+      if (!channel || channel.type !== ChannelType.GuildText) {
+        return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
+      }
+
+      const ticketNum = getTicketNumFromChannel(channel);
+
+      if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
+        return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
+      }
+
+      const targetMember = await guild.members.fetch(targetUser.id).catch((err) => {
+        console.error("Erreur fetch membre adduser :", err);
+        return null;
+      });
+
+      if (!targetMember) {
+        return await interaction.editReply("❌ Impossible de trouver cet utilisateur sur le serveur.");
+      }
+
+      const alreadyHasAccess = channel.permissionsFor(targetMember)?.has([
+        PermissionsBitField.Flags.ViewChannel,
+        PermissionsBitField.Flags.SendMessages,
+        PermissionsBitField.Flags.ReadMessageHistory,
+      ]);
+
+      if (alreadyHasAccess) {
+        return await interaction.editReply(`ℹ️ ${targetMember} a déjà accès à ce ticket.`);
+      }
+
+      await channel.permissionOverwrites.edit(targetMember.id, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+      });
+
+      await sendLog(
+        guild,
+        "➕ Utilisateur ajouté au ticket",
+        member,
+        ticketNum,
+        channel,
+        `Utilisateur ajouté : ${targetMember.user.tag}`
+      );
+
+      await channel.send(`➕ ${targetMember} a été ajouté au ticket par ${member}.`);
+
+      return await interaction.editReply(`✅ ${targetMember} a bien été ajouté au ticket.`);
+    }
+
+    if (interaction.commandName === "removeuser") {
+      await interaction.deferReply({ ephemeral: true });
+
+      const channel = interaction.channel;
+      const targetUser = interaction.options.getUser("utilisateur", true);
+
+      if (!channel || channel.type !== ChannelType.GuildText) {
+        return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
+      }
+
+      const ticketNum = getTicketNumFromChannel(channel);
+
+      if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
+        return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
+      }
+
+      const ownerId = channel.topic;
+
+      if (targetUser.id === ownerId) {
+        return await interaction.editReply("❌ Tu ne peux pas retirer le créateur du ticket.");
+      }
+
+      if (targetUser.id === client.user.id) {
+        return await interaction.editReply("❌ Tu ne peux pas retirer le bot du ticket.");
+      }
+
+      const targetMember = await guild.members.fetch(targetUser.id).catch((err) => {
+        console.error("Erreur fetch membre removeuser :", err);
+        return null;
+      });
+
+      if (!targetMember) {
+        return await interaction.editReply("❌ Impossible de trouver cet utilisateur sur le serveur.");
+      }
+
+      await channel.permissionOverwrites.delete(targetMember.id).catch(async () => {
+        await channel.permissionOverwrites.edit(targetMember.id, {
+          ViewChannel: false,
+          SendMessages: false,
+          ReadMessageHistory: false,
+        });
+      });
+
+      await sendLog(
+        guild,
+        "➖ Utilisateur retiré du ticket",
+        member,
+        ticketNum,
+        channel,
+        `Utilisateur retiré : ${targetMember.user.tag}`
+      );
+
+      await channel.send(`➖ ${targetMember} a été retiré du ticket par ${member}.`);
+
+      return await interaction.editReply(`✅ ${targetMember} a bien été retiré du ticket.`);
+    }
+
+    if (interaction.commandName === "creategiveaway") {
+      await interaction.deferReply();
+
+      const prize = interaction.options.getString("prix", true);
+      const durationMinutes = interaction.options.getInteger("duree", true);
+      const winnersCount = interaction.options.getInteger("gagnants", true);
+      const conditions = interaction.options.getString("conditions") ?? "";
+
+      const endsAt = new Date(Date.now() + durationMinutes * 60 * 1000);
+
+      const [giveaway] = await db
+        .insert(giveawaysTable)
+        .values({
+          prize,
+          durationMinutes,
+          winnersCount,
+          conditions,
+          endsAt,
+          channelId: interaction.channelId,
+          guildId: interaction.guildId ?? undefined,
+        })
+        .returning();
+
+      const embed = buildGiveawayEmbed({ ...giveaway, endsAt });
+      const reply = await interaction.editReply({ embeds: [embed] });
+
+      await db
+        .update(giveawaysTable)
+        .set({ messageId: reply.id })
+        .where(eq(giveawaysTable.id, giveaway.id));
+
+      await reply.react("🎉").catch((err) => {
+        console.error("Erreur réaction giveaway :", err);
+      });
+
+      scheduleGiveawayEnd(giveaway.id, endsAt);
+      return;
+    }
+
+    if (interaction.commandName === "listgiveaways") {
+      await interaction.deferReply({ ephemeral: true });
+
+      const giveaways = await db
+        .select()
+        .from(giveawaysTable)
+        .where(eq(giveawaysTable.status, "active"));
+
+      if (giveaways.length === 0) {
+        return await interaction.editReply("📋 Aucun giveaway actif en ce moment.");
+      }
+
+      const list = giveaways
+        .map((g) => {
+          const ts = Math.floor(new Date(g.endsAt).getTime() / 1000);
+          return `• **ID ${g.id}** — 🏆 ${g.prize} | 🥇 ${g.winnersCount} gagnant(s) | ⏰ <t:${ts}:R>`;
+        })
+        .join("\n");
+
+      return await interaction.editReply(`📋 **Giveaways actifs :**\n${list}`);
+    }
+
+    if (interaction.commandName === "endgiveaway") {
+      await interaction.deferReply();
+
+      const id = interaction.options.getInteger("id", true);
+
+      const [giveaway] = await db
+        .select()
+        .from(giveawaysTable)
+        .where(eq(giveawaysTable.id, id));
+
+      if (!giveaway) {
+        return await interaction.editReply("❌ Giveaway introuvable.");
+      }
+
+      if (giveaway.status === "ended") {
+        return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
+      }
+
+      const participants = await db
+        .select()
+        .from(giveawayParticipantsTable)
+        .where(eq(giveawayParticipantsTable.giveawayId, id));
+
+      const shuffled = [...participants].sort(() => Math.random() - 0.5);
+      const selectedWinners = shuffled
+        .slice(0, giveaway.winnersCount)
+        .map((p) => p.username);
+
+      const [updated] = await db
+        .update(giveawaysTable)
+        .set({ status: "ended", winners: selectedWinners })
+        .where(eq(giveawaysTable.id, id))
+        .returning();
+
+      if (giveaway.channelId && giveaway.messageId) {
+        const channel = await client.channels.fetch(giveaway.channelId).catch((err) => {
+          console.error("Erreur fetch channel endgiveaway :", err);
           return null;
         });
 
-        if (!targetMember) {
-          return await interaction.editReply("❌ Impossible de trouver cet utilisateur sur le serveur.");
-        }
-
-        const alreadyHasAccess = channel.permissionsFor(targetMember)?.has([
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-        ]);
-
-        if (alreadyHasAccess) {
-          return await interaction.editReply(`ℹ️ ${targetMember} a déjà accès à ce ticket.`);
-        }
-
-        await channel.permissionOverwrites.edit(targetMember, {
-          ViewChannel: true,
-          SendMessages: true,
-          ReadMessageHistory: true,
-        });
-
-        await sendLog(
-          guild,
-          "➕ Utilisateur ajouté au ticket",
-          member,
-          ticketNum,
-          channel,
-          `Utilisateur ajouté : ${targetMember.user.tag}`
-        );
-
-        await channel.send(`➕ ${targetMember} a été ajouté au ticket par ${member}.`);
-
-        return await interaction.editReply(`✅ ${targetMember} a bien été ajouté au ticket.`);
-      }
-
-                    if (interaction.commandName === "removeuser") {
-        await interaction.deferReply({ ephemeral: true });
-
-        const channel = interaction.channel;
-        const targetUser = interaction.options.getUser("utilisateur", true);
-
-        if (!channel || channel.type !== ChannelType.GuildText) {
-          return await interaction.editReply("❌ Cette commande doit être utilisée dans un salon texte.");
-        }
-
-        const ticketNum = getTicketNumFromChannel(channel);
-
-        if (!ticketNum || (!channel.name.startsWith("ticket-") && !channel.name.startsWith("closed-"))) {
-          return await interaction.editReply("❌ Cette commande peut uniquement être utilisée dans un salon ticket.");
-        }
-
-        const ownerId = channel.topic;
-
-        if (targetUser.id === ownerId) {
-          return await interaction.editReply("❌ Tu ne peux pas retirer le créateur du ticket.");
-        }
-
-        if (targetUser.id === client.user.id) {
-          return await interaction.editReply("❌ Tu ne peux pas retirer le bot du ticket.");
-        }
-
-        if (STAFF_ROLE_ID && member.roles.cache.has(STAFF_ROLE_ID) && targetUser.id === interaction.user.id) {
-          return await interaction.editReply("❌ Tu ne peux pas te retirer toi-même avec cette commande.");
-        }
-
-        const targetMember = await guild.members.fetch(targetUser.id).catch((err) => {
-          console.error("Erreur fetch membre removeuser :", err);
-          return null;
-        });
-
-        if (!targetMember) {
-          return await interaction.editReply("❌ Impossible de trouver cet utilisateur sur le serveur.");
-        }
-
-        await channel.permissionOverwrites.delete(targetMember).catch(async () => {
-          await channel.permissionOverwrites.edit(targetMember, {
-            ViewChannel: false,
-            SendMessages: false,
-            ReadMessageHistory: false,
-          });
-        });
-
-        await sendLog(
-          guild,
-          "➖ Utilisateur retiré du ticket",
-          member,
-          ticketNum,
-          channel,
-          `Utilisateur retiré : ${targetMember.user.tag}`
-        );
-
-        await channel.send(`➖ ${targetMember} a été retiré du ticket par ${member}.`);
-
-        return await interaction.editReply(`✅ ${targetMember} a bien été retiré du ticket.`);
-      }
-
-        const sanitized = newNameRaw
-          .toLowerCase()
-          .normalize("NFD")
-          .replace(/[\u0300-\u036f]/g, "")
-          .replace(/[^a-z0-9- ]/g, "")
-          .trim()
-          .replace(/\s+/g, "-")
-          .replace(/-+/g, "-")
-          .slice(0, 80);
-
-        if (!sanitized) {
-          return await interaction.editReply("❌ Le nom fourni est invalide.");
-        }
-
-        const prefix = channel.name.startsWith("closed-") ? "closed" : "ticket";
-        const finalName = `${prefix}-${ticketNum}-${sanitized}`;
-
-        try {
-          await channel.setName(finalName);
-
-          await sendLog(
-            guild,
-            "✏️ Ticket renommé",
-            member,
-            ticketNum,
-            channel,
-            `Nouveau nom : ${finalName}`
-          );
-
-          return await interaction.editReply(`✅ Le ticket a été renommé en **${finalName}**.`);
-        } catch (err) {
-          console.error("Erreur rename ticket :", err);
-          return await interaction.editReply("❌ Impossible de renommer ce ticket.");
-        }
-      }
-
-      if (interaction.commandName === "creategiveaway") {
-        await interaction.deferReply();
-
-        const prize = interaction.options.getString("prix", true);
-        const durationMinutes = interaction.options.getInteger("duree", true);
-        const winnersCount = interaction.options.getInteger("gagnants", true);
-        const conditions = interaction.options.getString("conditions") ?? "";
-
-        const endsAt = new Date(Date.now() + durationMinutes * 60 * 1000);
-
-        const [giveaway] = await db
-          .insert(giveawaysTable)
-          .values({
-            prize,
-            durationMinutes,
-            winnersCount,
-            conditions,
-            endsAt,
-            channelId: interaction.channelId,
-            guildId: interaction.guildId ?? undefined,
-          })
-          .returning();
-
-        const embed = buildGiveawayEmbed({ ...giveaway, endsAt });
-        const reply = await interaction.editReply({ embeds: [embed] });
-
-        await db
-          .update(giveawaysTable)
-          .set({ messageId: reply.id })
-          .where(eq(giveawaysTable.id, giveaway.id));
-
-        await reply.react("🎉").catch((err) => {
-          console.error("Erreur réaction giveaway :", err);
-        });
-
-        scheduleGiveawayEnd(giveaway.id, endsAt);
-        return;
-      }
-
-      if (interaction.commandName === "listgiveaways") {
-        await interaction.deferReply({ ephemeral: true });
-
-        const giveaways = await db
-          .select()
-          .from(giveawaysTable)
-          .where(eq(giveawaysTable.status, "active"));
-
-        if (giveaways.length === 0) {
-          return await interaction.editReply("📋 Aucun giveaway actif en ce moment.");
-        }
-
-        const list = giveaways
-          .map((g) => {
-            const ts = Math.floor(new Date(g.endsAt).getTime() / 1000);
-            return `• **ID ${g.id}** — 🏆 ${g.prize} | 🥇 ${g.winnersCount} gagnant(s) | ⏰ <t:${ts}:R>`;
-          })
-          .join("\n");
-
-        return await interaction.editReply(`📋 **Giveaways actifs :**\n${list}`);
-      }
-
-      if (interaction.commandName === "endgiveaway") {
-        await interaction.deferReply();
-
-        const id = interaction.options.getInteger("id", true);
-
-        const [giveaway] = await db
-          .select()
-          .from(giveawaysTable)
-          .where(eq(giveawaysTable.id, id));
-
-        if (!giveaway) {
-          return await interaction.editReply("❌ Giveaway introuvable.");
-        }
-
-        if (giveaway.status === "ended") {
-          return await interaction.editReply("❌ Ce giveaway est déjà terminé.");
-        }
-
-        const participants = await db
-          .select()
-          .from(giveawayParticipantsTable)
-          .where(eq(giveawayParticipantsTable.giveawayId, id));
-
-        const shuffled = [...participants].sort(() => Math.random() - 0.5);
-        const selectedWinners = shuffled
-          .slice(0, giveaway.winnersCount)
-          .map((p) => p.username);
-
-        const [updated] = await db
-          .update(giveawaysTable)
-          .set({ status: "ended", winners: selectedWinners })
-          .where(eq(giveawaysTable.id, id))
-          .returning();
-
-        if (giveaway.channelId && giveaway.messageId) {
-          const channel = await client.channels.fetch(giveaway.channelId).catch((err) => {
-            console.error("Erreur fetch channel endgiveaway :", err);
+        if (channel && channel.isTextBased()) {
+          const message = await channel.messages.fetch(giveaway.messageId).catch((err) => {
+            console.error("Erreur fetch message endgiveaway :", err);
             return null;
           });
 
-          if (channel && channel.isTextBased()) {
-            const message = await channel.messages.fetch(giveaway.messageId).catch((err) => {
-              console.error("Erreur fetch message endgiveaway :", err);
-              return null;
-            });
-
-            if (message) {
-              await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
-            }
+          if (message) {
+            await message.edit({ embeds: [buildGiveawayEmbed(updated)] });
           }
         }
-
-        return await interaction.editReply(
-          `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${
-            selectedWinners.join(", ") || "Aucun participant"
-          }`
-        );
       }
 
-      if (interaction.commandName === "reroll") {
-        return await handleRerollGiveaway(interaction);
-      }
-    } catch (err) {
-      console.error("Erreur commande giveaway :", err);
-
-      if (interaction.deferred || interaction.replied) {
-        await interaction.editReply("❌ Une erreur s'est produite.").catch((editErr) => {
-          console.error("Erreur editReply commande giveaway :", editErr);
-        });
-      } else {
-        await interaction.reply({
-          content: "❌ Une erreur s'est produite.",
-          ephemeral: true,
-        }).catch((replyErr) => {
-          console.error("Erreur reply commande giveaway :", replyErr);
-        });
-      }
-      return;
+      return await interaction.editReply(
+        `✅ Giveaway **${giveaway.prize}** terminé ! Gagnants : ${
+          selectedWinners.join(", ") || "Aucun participant"
+        }`
+      );
     }
-  }
 
+    if (interaction.commandName === "reroll") {
+      return await handleRerollGiveaway(interaction);
+    }
+  } catch (err) {
+    console.error("Erreur commande slash :", err);
+
+    if (interaction.deferred || interaction.replied) {
+      await interaction.editReply("❌ Une erreur s'est produite.").catch((editErr) => {
+        console.error("Erreur editReply commande slash :", editErr);
+      });
+    } else {
+      await interaction.reply({
+        content: "❌ Une erreur s'est produite.",
+        ephemeral: true,
+      }).catch((replyErr) => {
+        console.error("Erreur reply commande slash :", replyErr);
+      });
+    }
+    return;
+  }
+}
   // ── Notation (DM)
   if (interaction.isButton() && interaction.customId.startsWith("rate_")) {
     const parts = interaction.customId.split("_");
