@@ -1,0 +1,16 @@
+{
+  "name": "xmahub-bot",
+  "version": "1.0.0",
+  "description": "Bot Discord rôles + tickets + giveaways",
+  "type": "module",
+  "scripts": {
+    "start": "node index.js",
+    "migrate": "node migrate.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.18.0",
+    "dotenv": "^16.4.7",
+    "drizzle-orm": "^0.40.1",
+    "pg": "^8.20.0"
+  }
+}
