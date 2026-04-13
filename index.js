@@ -349,35 +349,24 @@ async function ensureXmahubChannel(guild) {
     name: XMAHUB_CHANNEL_NAME,
     type: ChannelType.GuildText,
     topic: XMAHUB_CHANNEL_TOPIC,
-    permissionOverwrites: [
-      {
-        id: guild.id,
-        deny: [PermissionsBitField.Flags.ViewChannel],
-      },
-      {
-        id: client.user.id,
-        allow: [
-          PermissionsBitField.Flags.ViewChannel,
-          PermissionsBitField.Flags.SendMessages,
-          PermissionsBitField.Flags.ReadMessageHistory,
-          PermissionsBitField.Flags.ManageChannels,
-        ],
-      },
-    ],
   });
 
-  const adminRoles = guild.roles.cache.filter((role) =>
-    role.permissions.has(PermissionFlagsBits.Administrator)
-  );
+  try {
+    const adminRoles = guild.roles.cache.filter((role) =>
+      role.permissions.has(PermissionFlagsBits.Administrator)
+    );
 
-  for (const [, role] of adminRoles) {
-    await xmahubChannel.permissionOverwrites.create(role, {
-      ViewChannel: true,
-      SendMessages: true,
-      ReadMessageHistory: true,
-    }).catch((err) => {
-      console.error(`Erreur overwrite admin XMAHUB ${role.name} :`, err);
-    });
+    for (const [, role] of adminRoles) {
+      await xmahubChannel.permissionOverwrites.create(role, {
+        ViewChannel: true,
+        SendMessages: true,
+        ReadMessageHistory: true,
+      }).catch((err) => {
+        console.error(`Erreur overwrite admin XMAHUB ${role.name} :`, err);
+      });
+    }
+  } catch (err) {
+    console.error("Erreur application des permissions admin XMAHUB :", err);
   }
 
   await xmahubChannel.send(
