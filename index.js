@@ -16,6 +16,7 @@ import {
   REST,
   Routes,
   Colors,
+  AttachmentBuilder,
 } from "discord.js";
 
 import { db } from "./db.js";
@@ -191,6 +192,124 @@ async function getLatestHumanTicketMessage(channel) {
   );
 }
 
+// ─── TRANSCRIPT UTILITIES ─────────────────────────────────────────────────────
+
+async function fetchAllMessages(channel) {
+  const allMessages = [];
+  let lastId = null;
+
+  try {
+    while (true) {
+      const options = { limit: 100 };
+      if (lastId) options.before = lastId;
+
+      const batch = await channel.messages.fetch(options).catch((err) => {
+        console.error(`Erreur fetch messages transcript (before=${lastId}) :`, err);
+        return null;
+      });
+
+      if (!batch || batch.size === 0) break;
+
+      allMessages.push(...batch.values());
+      lastId = batch.last()?.id ?? null;
+
+      if (batch.size < 100) break;
+    }
+  } catch (err) {
+    console.error("Erreur fetchAllMessages :", err);
+  }
+
+  // Sort oldest → newest
+  return allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
+}
+
+function generateTranscript(messages, ticketNum) {
+  try {
+    const lines = [];
+
+    lines.push(`=== Transcript du ticket #${ticketNum} ===`);
+    lines.push(`Généré le : ${new Date().toISOString()}`);
+    lines.push(`Nombre de messages : ${messages.length}`);
+    lines.push("=".repeat(50));
+    lines.push("");
+
+    for (const message of messages) {
+      const date = new Date(message.createdTimestamp);
+      const dateStr = date.toISOString().replace("T", " ").slice(0, 19);
+      const username = message.author?.username ?? "Inconnu";
+      const content = message.content?.trim() ?? "";
+
+      if (content) {
+        lines.push(`[${dateStr}] ${username}: ${content}`);
+      } else if (message.attachments.size > 0) {
+        lines.push(`[${dateStr}] ${username}: [No text content]`);
+      } else {
+        lines.push(`[${dateStr}] ${username}: `);
+      }
+
+      for (const attachment of message.attachments.values()) {
+        lines.push(`  📎 ${attachment.url}`);
+      }
+
+      if (message.embeds.length > 0) {
+        lines.push(`  [Embed present]`);
+      }
+    }
+
+    return lines.join("\n");
+  } catch (err) {
+    console.error("Erreur generateTranscript :", err);
+    return `=== Transcript du ticket #${ticketNum} ===\nErreur lors de la génération du transcript.`;
+  }
+}
+
+async function sendTranscriptLog(guild, channel, closedBy, ticketNum, messageCount, transcriptText) {
+  try {
+    if (!TICKET_LOG_CHANNEL) return;
+
+    const logChannel = guild.channels.cache.get(TICKET_LOG_CHANNEL);
+    if (!logChannel) {
+      console.error("Salon de log introuvable pour le transcript.");
+      return;
+    }
+
+    console.log(`Transcript généré : ${messageCount} messages (ticket #${ticketNum})`);
+
+    const transcriptBuffer = Buffer.from(transcriptText, "utf-8");
+    const attachment = new AttachmentBuilder(transcriptBuffer, {
+      name: `transcript-${ticketNum}.txt`,
+    });
+
+    const ownerId = getTicketOwnerId(channel);
+    const ownerLabel = ownerId ? `<@${ownerId}>` : "Inconnu";
+
+    const actorLabel =
+      typeof closedBy === "string"
+        ? closedBy
+        : closedBy?.user?.tag
+        ? `${closedBy} (${closedBy.user.tag})`
+        : "Système";
+
+    const transcriptEmbed = new EmbedBuilder()
+      .setTitle("📋 Ticket Transcript")
+      .addFields(
+        { name: "👤 Utilisateur", value: ownerLabel, inline: true },
+        { name: "🛡️ Staff qui ferme", value: actorLabel, inline: true },
+        { name: "💬 Nombre de messages", value: `${messageCount}`, inline: true },
+        { name: "🎫 Nom du ticket", value: `ticket-${ticketNum}`, inline: true }
+      )
+      .setColor(VIOLET_FONCE)
+      .setFooter({ text: ".gg/xma" })
+      .setTimestamp();
+
+    await logChannel.send({ embeds: [transcriptEmbed], files: [attachment] }).catch((err) => {
+      console.error("Erreur envoi transcript log :", err);
+    });
+  } catch (err) {
+    console.error("Erreur sendTranscriptLog :", err);
+  }
+}
+
 async function closeTicketChannel({
   guild,
   channel,
@@ -207,6 +326,11 @@ async function closeTicketChannel({
 
   const closedCategory = guild.channels.cache.get(TICKET_CATEGORY_CLOSED);
   const ownerId = getTicketOwnerId(channel);
+
+  // Fetch all messages and generate transcript before closing
+  const allMessages = await fetchAllMessages(channel);
+  const transcriptText = generateTranscript(allMessages, ticketNum);
+  await sendTranscriptLog(guild, channel, closedBy, ticketNum, allMessages.length, transcriptText);
 
   if (ownerId) {
     const ticketUser = await guild.members.fetch(ownerId).catch((err) => {
