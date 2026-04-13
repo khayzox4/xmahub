@@ -223,12 +223,43 @@ async function fetchAllMessages(channel) {
   return allMessages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
 }
 
+function generateTranscriptJSON(messages, ticketNum) {
+  const generatedAt = new Date().toISOString();
+  const messageCount = messages.length;
+
+  const structuredMessages = messages.map((message) => {
+    const date = new Date(message.createdTimestamp);
+    return {
+      timestamp: date.toISOString(),
+      username: message.author?.username ?? "Inconnu",
+      userId: message.author?.id ?? null,
+      content: message.content?.trim() ?? "",
+      attachments: [...message.attachments.values()].map((a) => ({
+        name: a.name,
+        url: a.url,
+        contentType: a.contentType ?? null,
+      })),
+      hasEmbed: message.embeds.length > 0,
+    };
+  });
+
+  return {
+    metadata: {
+      ticketNum,
+      generatedAt,
+      messageCount,
+    },
+    messages: structuredMessages,
+  };
+}
+
 function generateTranscript(messages, ticketNum) {
   try {
     const lines = [];
+    const generatedAt = new Date().toISOString();
 
     lines.push(`=== Transcript du ticket #${ticketNum} ===`);
-    lines.push(`Généré le : ${new Date().toISOString()}`);
+    lines.push(`Généré le : ${generatedAt}`);
     lines.push(`Nombre de messages : ${messages.length}`);
     lines.push("=".repeat(50));
     lines.push("");
@@ -256,29 +287,36 @@ function generateTranscript(messages, ticketNum) {
       }
     }
 
-    return lines.join("\n");
+    const text = lines.join("\n");
+    const json = generateTranscriptJSON(messages, ticketNum);
+
+    return {
+      success: true,
+      text,
+      json,
+      messageCount: messages.length,
+    };
   } catch (err) {
     console.error("Erreur generateTranscript :", err);
-    return `=== Transcript du ticket #${ticketNum} ===\nErreur lors de la génération du transcript.`;
+    return {
+      success: false,
+      text: `=== Transcript du ticket #${ticketNum} ===\nErreur lors de la génération du transcript.`,
+      json: null,
+      messageCount: 0,
+      error: err?.message ?? "Erreur inconnue",
+    };
   }
 }
 
-async function sendTranscriptLog(guild, channel, closedBy, ticketNum, messageCount, transcriptText) {
+async function sendTranscriptLog(guild, channel, closedBy, ticketNum, transcript) {
   try {
-    if (!TICKET_LOG_CHANNEL) return;
+    if (!TICKET_LOG_CHANNEL) return { success: false, error: "TICKET_LOG_CHANNEL non configuré" };
 
     const logChannel = guild.channels.cache.get(TICKET_LOG_CHANNEL);
     if (!logChannel) {
       console.error("Salon de log introuvable pour le transcript.");
-      return;
+      return { success: false, error: "Salon de log introuvable" };
     }
-
-    console.log(`Transcript généré : ${messageCount} messages (ticket #${ticketNum})`);
-
-    const transcriptBuffer = Buffer.from(transcriptText, "utf-8");
-    const attachment = new AttachmentBuilder(transcriptBuffer, {
-      name: `transcript-${ticketNum}.txt`,
-    });
 
     const ownerId = getTicketOwnerId(channel);
     const ownerLabel = ownerId ? `<@${ownerId}>` : "Inconnu";
@@ -292,21 +330,60 @@ async function sendTranscriptLog(guild, channel, closedBy, ticketNum, messageCou
 
     const transcriptEmbed = new EmbedBuilder()
       .setTitle("📋 Ticket Transcript")
-      .addFields(
-        { name: "👤 Utilisateur", value: ownerLabel, inline: true },
-        { name: "🛡️ Staff qui ferme", value: actorLabel, inline: true },
-        { name: "💬 Nombre de messages", value: `${messageCount}`, inline: true },
-        { name: "🎫 Nom du ticket", value: `ticket-${ticketNum}`, inline: true }
-      )
       .setColor(VIOLET_FONCE)
       .setFooter({ text: ".gg/xma" })
       .setTimestamp();
 
-    await logChannel.send({ embeds: [transcriptEmbed], files: [attachment] }).catch((err) => {
+    const files = [];
+
+    if (transcript.success) {
+      const messageCount = transcript.messageCount;
+      console.log(`Transcript généré : ${messageCount} messages (ticket #${ticketNum})`);
+
+      transcriptEmbed.addFields(
+        { name: "👤 Utilisateur", value: ownerLabel, inline: true },
+        { name: "🛡️ Staff qui ferme", value: actorLabel, inline: true },
+        { name: "💬 Nombre de messages", value: `${messageCount}`, inline: true },
+        { name: "🎫 Nom du ticket", value: `ticket-${ticketNum}`, inline: true }
+      );
+
+      const txtBuffer = Buffer.from(transcript.text, "utf-8");
+      files.push(new AttachmentBuilder(txtBuffer, { name: `transcript-${ticketNum}.txt` }));
+
+      if (transcript.json) {
+        const jsonBuffer = Buffer.from(JSON.stringify(transcript.json, null, 2), "utf-8");
+        files.push(new AttachmentBuilder(jsonBuffer, { name: `transcript-${ticketNum}.json` }));
+      }
+    } else {
+      console.error(`Échec génération transcript ticket #${ticketNum} : ${transcript.error}`);
+      transcriptEmbed.addFields(
+        { name: "👤 Utilisateur", value: ownerLabel, inline: true },
+        { name: "🛡️ Staff qui ferme", value: actorLabel, inline: true },
+        { name: "🎫 Nom du ticket", value: `ticket-${ticketNum}`, inline: true },
+        { name: "❌ Erreur transcript", value: transcript.error ?? "Erreur inconnue", inline: false }
+      );
+    }
+
+    const downloadRow = new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`transcript_download_${ticketNum}`)
+        .setLabel("📥 Télécharger")
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(!transcript.success)
+    );
+
+    await logChannel.send({
+      embeds: [transcriptEmbed],
+      files,
+      components: [downloadRow],
+    }).catch((err) => {
       console.error("Erreur envoi transcript log :", err);
     });
+
+    return { success: true };
   } catch (err) {
     console.error("Erreur sendTranscriptLog :", err);
+    return { success: false, error: err?.message ?? "Erreur inconnue" };
   }
 }
 
@@ -329,8 +406,20 @@ async function closeTicketChannel({
 
   // Fetch all messages and generate transcript before closing
   const allMessages = await fetchAllMessages(channel);
-  const transcriptText = generateTranscript(allMessages, ticketNum);
-  await sendTranscriptLog(guild, channel, closedBy, ticketNum, allMessages.length, transcriptText);
+  const transcript = generateTranscript(allMessages, ticketNum);
+
+  if (!transcript.success) {
+    console.error(`❌ Génération du transcript échouée pour le ticket #${ticketNum} : ${transcript.error}`);
+    await channel.send(
+      `❌ **Erreur critique** : La génération du transcript a échoué (\`${transcript.error ?? "Erreur inconnue"}\`).\n` +
+      `Le ticket **n'a pas été fermé** afin d'éviter toute perte de données. Veuillez réessayer ou contacter un administrateur.`
+    ).catch((err) => {
+      console.error("Erreur envoi message échec transcript :", err);
+    });
+    return false;
+  }
+
+  await sendTranscriptLog(guild, channel, closedBy, ticketNum, transcript);
 
   if (ownerId) {
     const ticketUser = await guild.members.fetch(ownerId).catch((err) => {
@@ -2209,6 +2298,65 @@ if (interaction.isChatInputCommand()) {
         "ticket_reopen_error"
       );
     }
+  }
+
+  // ── Bouton : télécharger un transcript
+  if (interaction.isButton() && interaction.customId.startsWith("transcript_download_")) {
+    const ticketNum = interaction.customId.replace("transcript_download_", "");
+
+    try {
+      await interaction.deferReply({ ephemeral: true });
+
+      if (!TICKET_LOG_CHANNEL) {
+        return await interaction.editReply("❌ Le salon de log des transcripts n'est pas configuré.");
+      }
+
+      const logChannel = guild?.channels.cache.get(TICKET_LOG_CHANNEL);
+      if (!logChannel) {
+        return await interaction.editReply("❌ Salon de log introuvable.");
+      }
+
+      // Search recent messages in the log channel for the transcript files
+      const recentMessages = await logChannel.messages.fetch({ limit: 100 }).catch((err) => {
+        console.error("Erreur fetch messages log transcript_download :", err);
+        return null;
+      });
+
+      if (!recentMessages) {
+        return await interaction.editReply("❌ Impossible de récupérer les messages du salon de log.");
+      }
+
+      const transcriptMessage = recentMessages.find((msg) =>
+        msg.attachments.some(
+          (a) => a.name === `transcript-${ticketNum}.txt` || a.name === `transcript-${ticketNum}.json`
+        )
+      );
+
+      if (!transcriptMessage) {
+        return await interaction.editReply(
+          `❌ Aucun fichier de transcript trouvé pour le ticket **#${ticketNum}**. Il est possible que le transcript soit trop ancien.`
+        );
+      }
+
+      const transcriptFiles = [...transcriptMessage.attachments.values()].filter(
+        (a) => a.name === `transcript-${ticketNum}.txt` || a.name === `transcript-${ticketNum}.json`
+      );
+
+      const attachments = transcriptFiles.map((a) => new AttachmentBuilder(a.url, { name: a.name }));
+
+      return await interaction.editReply({
+        content: `📥 Voici les fichiers du transcript pour le ticket **#${ticketNum}** :`,
+        files: attachments,
+      });
+    } catch (err) {
+      console.error("Erreur transcript_download :", err);
+      if (interaction.deferred || interaction.replied) {
+        await interaction.editReply("❌ Une erreur est survenue lors de la récupération du transcript.").catch(() => {});
+      } else {
+        await interaction.reply({ content: "❌ Une erreur est survenue.", ephemeral: true }).catch(() => {});
+      }
+    }
+    return;
   }
 
   // ── Bouton : supprimer un ticket
