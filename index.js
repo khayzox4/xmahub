@@ -1249,7 +1249,7 @@ client.on("messageCreate", async (message) => {
       )
       .setColor(VIOLET_FONCE)
       .setImage("https://cdn.discordapp.com/attachments/1081968565831352391/1494165733750476920/XMAHUB_1.png?ex=69e19dc7&is=69e04c47&hm=910f5e22abf3e4a0d399d1d01602f80d7a673c7569aa0c5c5dce2812ea7cfd41&")
-      .setFooter({ text: "Support XMAHUB" }
+      .setFooter({ text: "Support XMAHUB" })
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
