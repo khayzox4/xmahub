@@ -1212,11 +1212,13 @@ client.on("messageCreate", async (message) => {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("role_homme")
-        .setLabel("<:61218male:1494173924660084796> Homme")
+        .setLabel("Homme")
+        .setEmoji("1494173924660084796")
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId("role_femme")
-        .setLabel("<:4654pinkfemalesymbol:1494173818359513289> Femme")
+        .setLabel("Femme")
+        .setEmoji("1494173818359513289"
         .setStyle(ButtonStyle.Secondary)
     );
 
