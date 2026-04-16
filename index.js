@@ -29,6 +29,9 @@ const ROLE_FEMME_ID = process.env.DISCORD_ROLE_FEMME;
 const ROLE_NUDE1_ID = process.env.DISCORD_ROLE_NUDE1;
 const ROLE_NUDE2_ID = process.env.DISCORD_ROLE_NUDE2;
 const ROLE_NUDE3_ID = process.env.DISCORD_ROLE_NUDE3;
+const ROLE_MP1_ID = process.env.DISCORD_ROLE_MP1;
+const ROLE_MP2_ID = process.env.DISCORD_ROLE_MP2;
+const ROLE_MP3_ID = process.env.DISCORD_ROLE_MP3;
 const TICKET_CATEGORY_OPEN = process.env.DISCORD_TICKET_CATEGORY_OPEN;
 const TICKET_CATEGORY_CLOSED = process.env.DISCORD_TICKET_CATEGORY_CLOSED;
 const TICKET_LOG_CHANNEL = process.env.DISCORD_TICKET_LOG_CHANNEL;
@@ -1276,6 +1279,50 @@ if (cmd === "!embedrôle2" || cmd === "!embedrole2") {
   });
   return;
 }
+
+  if (cmd === "!embedmp") {
+  if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+    return message.reply({
+      content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)",
+    });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle("💜 - Choisis tes Messages Privés")
+    .setDescription(
+      "Choisissez parmi les options suivantes le type de vos MP sur ce serveur :\n\n" +
+        "<:7561purpnum1:1494225979126845490> **MP ouvert** — Tout le monde peut te DM\n\n" +
+        "<:4388purpnum2:1494226037792440321> **MP sur demande** — Demande avant d’envoyer un message\n\n" +
+        "<:2300purpnum3:1494226093429751818> **MP fermé** — Aucun message privé\n\n" +
+        "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
+    )
+    .setColor(VIOLET_FONCE)
+    .setFooter({ text: "Un seul rôle MP peut être actif à la fois." });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("role_mp1")
+      .setLabel("MP ouvert")
+      .setEmoji("1494225979126845490")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("role_mp2")
+      .setLabel("MP sur demande")
+      .setEmoji("1494226037792440321")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("role_mp3")
+      .setLabel("MP fermé")
+      .setEmoji("1494226093429751818")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await message.channel.send({ embeds: [embed], components: [row] });
+  await message.delete().catch(() => {});
+  return;
+}
   if (cmd === "!panneauticket") {
     if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
       return message.reply({
@@ -1911,98 +1958,42 @@ if (interaction.isChatInputCommand()) {
   // ── Auto Rôles
 if (
   interaction.isButton() &&
-  ["role_nude1", "role_nude2", "role_nude3"].includes(interaction.customId)
+  ["role_mp1", "role_mp2", "role_mp3"].includes(interaction.customId)
 ) {
   if (!guild) return;
 
-  const ok = await safeDefer(interaction, "nude_role_buttons");
+  const ok = await safeDefer(interaction, "mp_roles");
   if (!ok) return;
 
   try {
-    const roleNude1 = await guild.roles.fetch(ROLE_NUDE1_ID);
-    const roleNude2 = await guild.roles.fetch(ROLE_NUDE2_ID);
-    const roleNude3 = await guild.roles.fetch(ROLE_NUDE3_ID);
+    const role1 = await guild.roles.fetch(ROLE_MP1_ID);
+    const role2 = await guild.roles.fetch(ROLE_MP2_ID);
+    const role3 = await guild.roles.fetch(ROLE_MP3_ID);
 
-    if (!roleNude1 || !roleNude2 || !roleNude3) {
-      return safeReply(
-        interaction,
-        "❌ Rôles NSFW introuvables. Contacte un administrateur.",
-        "nude_roles_fetch"
-      );
+    if (!role1 || !role2 || !role3) {
+      return safeReply(interaction, "❌ Rôles MP introuvables.", "mp_roles_fetch");
     }
 
-    if (interaction.customId === "role_nude1") {
-      if (member.roles.cache.has(ROLE_NUDE1_ID)) {
-        return safeReply(
-          interaction,
-          "ℹ️ Tu as déjà le rôle **je n*de**.",
-          "role_nude1_already"
-        );
-      }
-
-      await member.roles.remove([roleNude2, roleNude3]).catch((err) => {
-        console.error("Erreur retrait autres rôles NSFW :", err);
-      });
-
-      await member.roles.add(roleNude1);
-
-      return safeReply(
-        interaction,
-        "✅ Le rôle **je n*de** t'a été attribué !",
-        "role_nude1_done"
-      );
+    if (interaction.customId === "role_mp1") {
+      await member.roles.remove([role2, role3]);
+      await member.roles.add(role1);
+      return safeReply(interaction, "✅ MP ouvert activé !");
     }
 
-    if (interaction.customId === "role_nude2") {
-      if (member.roles.cache.has(ROLE_NUDE2_ID)) {
-        return safeReply(
-          interaction,
-          "ℹ️ Tu as déjà le rôle **je n*de si affinité**.",
-          "role_nude2_already"
-        );
-      }
-
-      await member.roles.remove([roleNude1, roleNude3]).catch((err) => {
-        console.error("Erreur retrait autres rôles NSFW :", err);
-      });
-
-      await member.roles.add(roleNude2);
-
-      return safeReply(
-        interaction,
-        "✅ Le rôle **je n*de si affinité** t'a été attribué !",
-        "role_nude2_done"
-      );
+    if (interaction.customId === "role_mp2") {
+      await member.roles.remove([role1, role3]);
+      await member.roles.add(role2);
+      return safeReply(interaction, "✅ MP sur demande activé !");
     }
 
-    if (interaction.customId === "role_nude3") {
-      if (member.roles.cache.has(ROLE_NUDE3_ID)) {
-        return safeReply(
-          interaction,
-          "ℹ️ Tu as déjà le rôle **je n*de pas**.",
-          "role_nude3_already"
-        );
-      }
-
-      await member.roles.remove([roleNude1, roleNude2]).catch((err) => {
-        console.error("Erreur retrait autres rôles NSFW :", err);
-      });
-
-      await member.roles.add(roleNude3);
-
-      return safeReply(
-        interaction,
-        "✅ Le rôle **je n*de pas** t'a été attribué !",
-        "role_nude3_done"
-      );
+    if (interaction.customId === "role_mp3") {
+      await member.roles.remove([role1, role2]);
+      await member.roles.add(role3);
+      return safeReply(interaction, "✅ MP fermé activé !");
     }
   } catch (err) {
-    console.error("Erreur attribution rôle NSFW :", err);
-    return safeReply(
-      interaction,
-      "❌ Une erreur est survenue lors de l'attribution du rôle NSFW.",
-      "nude_role_error"
-    );
+    console.error("Erreur rôles MP :", err);
+    return safeReply(interaction, "❌ Erreur lors de l'attribution.");
   }
 }
 
