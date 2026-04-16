@@ -1198,10 +1198,10 @@ client.on("messageCreate", async (message) => {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle("✨ Choisis ton genre ✨")
+      .setTitle("Choisis ton genre")
       .setDescription(
         "Bienvenue sur le serveur ! Sélectionne ton genre ci-dessous en cliquant sur le bouton correspondant.\n\n" +
-          "<:61218male:1494173924660084796> **Homme** — Clique pour obtenir le rôle Homme\n" +
+          "<:61218male:1494173924660084796> **Homme** — Clique pour obtenir le rôle Homme\n\n" +
           "<:4654pinkfemalesymbol:1494173818359513289> **Femme** — Clique pour obtenir le rôle Femme\n\n" +
           "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
       )
