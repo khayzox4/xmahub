@@ -729,7 +729,7 @@ function logInteraction(interaction) {
 
 async function safeDefer(interaction, label = "interaction") {
   try {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
     return true;
   } catch (err) {
     console.error(`[safeDefer:${label}]`, err);
@@ -742,7 +742,7 @@ async function safeReply(interaction, content, label = "interaction") {
     if (interaction.deferred || interaction.replied) {
       await interaction.editReply({ content });
     } else {
-      await interaction.reply({ content, ephemeral: true });
+      await interaction.reply({ content, flags: 64 });
     }
   } catch (err) {
     console.error(`[safeReply:${label}]`, err);
@@ -1075,7 +1075,7 @@ async function scheduleGiveawayEnd(giveawayId, endsAt) {
 
 async function handleRerollGiveaway(interaction) {
   try {
-    await interaction.deferReply({ ephemeral: true });
+    await interaction.deferReply({ flags: 64 });
 
     const id = interaction.options.getInteger("id", true);
 
@@ -1144,7 +1144,7 @@ async function handleRerollGiveaway(interaction) {
 
     return interaction.reply({
       content: "❌ Une erreur est survenue.",
-      ephemeral: true,
+      flags: 64,
     }).catch((replyErr) => {
       console.error("Erreur reply reroll :", replyErr);
     });
@@ -1378,20 +1378,20 @@ if (interaction.isChatInputCommand()) {
       if (!isAdmin && !hasStaffRole) {
         return await interaction.reply({
           content: "❌ Seuls le staff et les administrateurs peuvent utiliser cette commande.",
-          ephemeral: true,
+          flags: 64,
         });
       }
     } else {
       if (!isAdmin) {
         return await interaction.reply({
           content: "❌ Seuls les administrateurs peuvent utiliser ces commandes.",
-          ephemeral: true,
+          flags: 64,
         });
       }
     }
 
     if (interaction.commandName === "rename") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const channel = interaction.channel;
       const newNameRaw = interaction.options.getString("nom", true);
@@ -1438,7 +1438,7 @@ if (interaction.isChatInputCommand()) {
     }
 
     if (interaction.commandName === "adduser") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const channel = interaction.channel;
       const targetUser = interaction.options.getUser("utilisateur", true);
@@ -1493,7 +1493,7 @@ if (interaction.isChatInputCommand()) {
     }
 
     if (interaction.commandName === "removeuser") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const channel = interaction.channel;
       const targetUser = interaction.options.getUser("utilisateur", true);
@@ -1550,7 +1550,7 @@ if (interaction.isChatInputCommand()) {
     }
 
     if (interaction.commandName === "ticketactif") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const channel = interaction.channel;
 
@@ -1614,7 +1614,7 @@ if (interaction.isChatInputCommand()) {
     }
 
     if (interaction.commandName === "listemedias") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const pendingDispatches = await db
         .select()
@@ -1647,7 +1647,7 @@ if (interaction.isChatInputCommand()) {
     }
 
     if (interaction.commandName === "programmermedia") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const hubChannel = await ensureXmahubChannel(guild).catch((err) => {
         console.error("Erreur récupération salon XMAHUB :", err);
@@ -1726,7 +1726,7 @@ if (interaction.isChatInputCommand()) {
     }
 
     if (interaction.commandName === "annulermedia") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const dispatchId = interaction.options.getInteger("id", true);
       const [dispatch] = await db
@@ -1790,7 +1790,7 @@ if (interaction.isChatInputCommand()) {
     }
 
     if (interaction.commandName === "listgiveaways") {
-      await interaction.deferReply({ ephemeral: true });
+      await interaction.deferReply({ flags: 64 });
 
       const giveaways = await db
         .select()
@@ -1883,7 +1883,7 @@ if (interaction.isChatInputCommand()) {
     } else {
       await interaction.reply({
         content: "❌ Une erreur s'est produite.",
-        ephemeral: true,
+        flags: 64,
       }).catch((replyErr) => {
         console.error("Erreur reply commande slash :", replyErr);
       });
@@ -1938,7 +1938,7 @@ if (interaction.isChatInputCommand()) {
       if (acknowledged) {
         await interaction.followUp({
           content: `✅ Merci pour ta note de **${stars}/5** ! Ton avis nous aide à améliorer notre support.`,
-          ephemeral: true,
+          flags: 64,
         }).catch((err) => {
           console.error("[rate followUp]", err);
         });
@@ -2018,7 +2018,7 @@ if (
     if (existing) {
       return interaction.reply({
         content: `❌ Tu as déjà un ticket ouvert : ${existing}`,
-        ephemeral: true,
+        flags: 64,
       }).catch((err) => {
         console.error("Erreur reply ticket_open existing :", err);
       });
@@ -2321,7 +2321,7 @@ if (
     try {
       await interaction.reply({
         content: "🗑️ Suppression du ticket dans 5 secondes...",
-        ephemeral: true,
+        flags: 64,
       });
     } catch (err) {
       console.error("Erreur reply ticket_delete :", err);
