@@ -1239,7 +1239,7 @@ client.on("messageCreate", async (message) => {
       .setDescription(
         "Besoin d'aide ? Créez un ticket en cliquant sur le bouton ci-dessous.\n\n" +
           "Un canal privé sera créé où vous pourrez discuter avec notre équipe de support.\n\n" +
-          "**:398041book: Comment ça marche ?**\n" +
+          "**<:book:398041> Comment ça marche ?**\n" +
           "• Cliquez sur **Ouvrir un ticket**\n" +
           "• Expliquez votre demande\n" +
           "• Notre équipe vous répondra rapidement\n" +
