@@ -1248,7 +1248,7 @@ client.on("messageCreate", async (message) => {
           "**<:7577purple:1494162709963345970> Confidentialité**\nSeuls vous et le staff peuvent voir le ticket"
       )
       .setColor(VIOLET_FONCE)
-      .setThumbnail(https://cdn.discordapp.com/attachments/1081968565831352391/1494170511104671864/telechargement.gif?ex=69e1a23a&is=69e050ba&hm=4db4e5cfab01275dce111eb91b94fac8d49fb918587902df832d09fa0e5831b3&)
+      .setThumbnail("https://cdn.discordapp.com/attachments/1081968565831352391/1494170511104671864/telechargement.gif?")
       .setImage("https://cdn.discordapp.com/attachments/1081968565831352391/1494165733750476920/XMAHUB_1.png?ex=69e19dc7&is=69e04c47&hm=910f5e22abf3e4a0d399d1d01602f80d7a673c7569aa0c5c5dce2812ea7cfd41&")
       .setFooter({ text: "Support XMAHUB" })
 
