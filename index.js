@@ -1240,13 +1240,13 @@ if (cmd === "!embedrôle2" || cmd === "!embedrole2") {
 
   const embed = new EmbedBuilder()
     .setTitle("💜 - Choisis ton NSFW")
-    .setDescription(
-      "Sélectionne ton NSFW ci-dessous en cliquant sur le bouton correspondant.\n\n" +
-        "<:7561purpnum1:1494225979126845490> **je n*de** — Clique pour obtenir le rôle je n*de\n\n" +
-        "<:4388purpnum2:1494226037792440321> **je n*de si affinité** — Clique pour obtenir le rôle je n*de si affinité\n\n" +
-        "<:2300purpnum3:1494226093429751818> **je n*de pas** — Clique pour obtenir le rôle je n*de pas\n\n" +
-        "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
-    )
+.setDescription(
+  "Sélectionne ton NSFW ci-dessous en cliquant sur le bouton correspondant.\n\n" +
+    "<:7561purpnum1:1494225979126845490> **je n\\*de** — Clique pour obtenir le rôle je n\\*de\n\n" +
+    "<:4388purpnum2:1494226037792440321> **je n\\*de si affinité** — Clique pour obtenir le rôle je n\\*de si affinité\n\n" +
+    "<:2300purpnum3:1494226093429751818> **je n\\*de pas** — Clique pour obtenir le rôle je n\\*de pas\n\n" +
+    "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
+)
     .setColor(VIOLET_FONCE)
     .setFooter({ text: "Un seul rôle NSFW peut être actif à la fois." });
 
