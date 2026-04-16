@@ -1963,7 +1963,7 @@ if (
   if (!guild) return;
 
   try {
-    await interaction.reply({ content, ephemeral: true });
+    await interaction.reply({ content, flags: 64 });
 
     console.log("NSFW click:", interaction.customId);
     console.log("ROLE_NUDE1_ID =", ROLE_NUDE1_ID);
