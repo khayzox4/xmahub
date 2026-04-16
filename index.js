@@ -1235,27 +1235,27 @@ client.on("messageCreate", async (message) => {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle("🎫 Support — Créer un ticket")
+      .setTitle("Support — Créer un ticket")
       .setDescription(
         "Besoin d'aide ? Créez un ticket en cliquant sur le bouton ci-dessous.\n\n" +
           "Un canal privé sera créé où vous pourrez discuter avec notre équipe de support.\n\n" +
-          "**📋 Comment ça marche ?**\n" +
+          "**:398041book: Comment ça marche ?**\n" +
           "• Cliquez sur **Ouvrir un ticket**\n" +
           "• Expliquez votre demande\n" +
           "• Notre équipe vous répondra rapidement\n" +
           "• Le ticket sera fermé une fois résolu\n\n" +
-          "**⚡ Temps de réponse**\nGénéralement sous 24h\n\n" +
-          "**🔒 Confidentialité**\nSeuls vous et le staff peuvent voir le ticket"
+          "**:8610purpleone:Temps de réponse**\nGénéralement sous 24h\n\n" +
+          "**:7577purple: Confidentialité**\nSeuls vous et le staff peuvent voir le ticket"
       )
       .setColor(VIOLET_FONCE)
-      .setFooter({ text: "Support XMAHUB" })
-      .setTimestamp();
+      .setImage("https://cdn.discordapp.com/attachments/1081968565831352391/1494165733750476920/XMAHUB_1.png?ex=69e19dc7&is=69e04c47&hm=910f5e22abf3e4a0d399d1d01602f80d7a673c7569aa0c5c5dce2812ea7cfd41&")
+      .setFooter({ text: "Support XMAHUB" }
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("ticket_open")
-        .setLabel("📩 Ouvrir un ticket")
-        .setStyle(ButtonStyle.Primary)
+        .setLabel("Ouvrir un ticket")
+        .setStyle(ButtonStyle.Secondary)
     );
 
     await message.channel.send({ embeds: [embed], components: [row] });
