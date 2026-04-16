@@ -1231,13 +1231,6 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
-  if (cmd === "!embedrôle2" || cmd === "!embedrole2") {
-    if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
-      return message.reply({
-        content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)",
-      });
-    }
-
 if (cmd === "!embedrôle2" || cmd === "!embedrole2") {
   if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
     return message.reply({
