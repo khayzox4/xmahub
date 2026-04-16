@@ -1213,12 +1213,12 @@ client.on("messageCreate", async (message) => {
       new ButtonBuilder()
         .setCustomId("role_homme")
         .setLabel("Homme")
-        .setEmoji("1494173924660084796")
+        .setEmoji("<:61218male:1494173924660084796>")
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId("role_femme")
         .setLabel("Femme")
-        .setEmoji("1494173818359513289"
+        .setEmoji("<:4654pinkfemalesymbol:1494173818359513289>")
         .setStyle(ButtonStyle.Secondary)
     );
 
