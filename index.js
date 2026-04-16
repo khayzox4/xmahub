@@ -1201,8 +1201,8 @@ client.on("messageCreate", async (message) => {
       .setTitle("✨ Choisis ton genre ✨")
       .setDescription(
         "Bienvenue sur le serveur ! Sélectionne ton genre ci-dessous en cliquant sur le bouton correspondant.\n\n" +
-          "<:649138genderids:1481759654387384555> **Homme** — Clique pour obtenir le rôle Homme\n" +
-          "<:63396genderids:1481759633961124002> **Femme** — Clique pour obtenir le rôle Femme\n\n" +
+          "<:61218male:1494173924660084796> **Homme** — Clique pour obtenir le rôle Homme\n" +
+          "<:4654pinkfemalesymbol:1494173818359513289> **Femme** — Clique pour obtenir le rôle Femme\n\n" +
           "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
       )
       .setColor(VIOLET_FONCE)
@@ -1212,11 +1212,11 @@ client.on("messageCreate", async (message) => {
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
         .setCustomId("role_homme")
-        .setLabel("🔵 Homme")
+        .setLabel("<:61218male:1494173924660084796> Homme")
         .setStyle(ButtonStyle.Primary),
       new ButtonBuilder()
         .setCustomId("role_femme")
-        .setLabel("🌸 Femme")
+        .setLabel("<:4654pinkfemalesymbol:1494173818359513289> Femme")
         .setStyle(ButtonStyle.Secondary)
     );
 
