@@ -26,6 +26,9 @@ import { eq, and } from "drizzle-orm";
 const TOKEN = process.env.DISCORD_TOKEN;
 const ROLE_HOMME_ID = process.env.DISCORD_ROLE_HOMME;
 const ROLE_FEMME_ID = process.env.DISCORD_ROLE_FEMME;
+const ROLE_NUDE1_ID = process.env.DISCORD_ROLE_NUDE1;
+const ROLE_NUDE2_ID = process.env.DISCORD_ROLE_NUDE2;
+const ROLE_NUDE3_ID = process.env.DISCORD_ROLE_NUDE3;
 const TICKET_CATEGORY_OPEN = process.env.DISCORD_TICKET_CATEGORY_OPEN;
 const TICKET_CATEGORY_CLOSED = process.env.DISCORD_TICKET_CATEGORY_CLOSED;
 const TICKET_LOG_CHANNEL = process.env.DISCORD_TICKET_LOG_CHANNEL;
@@ -1198,16 +1201,15 @@ client.on("messageCreate", async (message) => {
     }
 
     const embed = new EmbedBuilder()
-      .setTitle("Choisis ton genre")
+      .setTitle("💜 - Choisis ton genre")
       .setDescription(
-        "Bienvenue sur le serveur ! Sélectionne ton genre ci-dessous en cliquant sur le bouton correspondant.\n\n" +
+        "Sélectionne ton genre ci-dessous en cliquant sur le bouton correspondant.\n\n" +
           "<:61218male:1494173924660084796> **Homme** — Clique pour obtenir le rôle Homme\n\n" +
           "<:4654pinkfemalesymbol:1494173818359513289> **Femme** — Clique pour obtenir le rôle Femme\n\n" +
           "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
       )
       .setColor(VIOLET_FONCE)
       .setFooter({ text: "Un seul rôle de genre peut être actif à la fois." })
-      .setTimestamp();
 
     const row = new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -1229,6 +1231,58 @@ client.on("messageCreate", async (message) => {
     return;
   }
 
+  if (cmd === "!embedrôle2" || cmd === "!embedrole2") {
+    if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+      return message.reply({
+        content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)",
+      });
+    }
+
+if (cmd === "!embedrôle2" || cmd === "!embedrole2") {
+  if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
+    return message.reply({
+      content: "❌ Tu n'as pas la permission d'utiliser cette commande. (Administrateur requis)",
+    });
+  }
+
+  const embed = new EmbedBuilder()
+    .setTitle("💜 - Choisis ton NSFW")
+    .setDescription(
+      "Sélectionne ton NSFW ci-dessous en cliquant sur le bouton correspondant.\n\n" +
+        "<:7561purpnum1:1494225979126845490> **je n*de** — Clique pour obtenir le rôle je n*de\n\n" +
+        "<:4388purpnum2:1494226037792440321> **je n*de si affinité** — Clique pour obtenir le rôle je n*de si affinité\n\n" +
+        "<:2300purpnum3:1494226093429751818> **je n*de pas** — Clique pour obtenir le rôle je n*de pas\n\n" +
+        "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
+    )
+    .setColor(VIOLET_FONCE)
+    .setFooter({ text: "Un seul rôle NSFW peut être actif à la fois." });
+
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder()
+      .setCustomId("role_nude1")
+      .setLabel("je n*de")
+      .setEmoji("1494225979126845490")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("role_nude2")
+      .setLabel("je n*de si affinité")
+      .setEmoji("1494226037792440321")
+      .setStyle(ButtonStyle.Secondary),
+
+    new ButtonBuilder()
+      .setCustomId("role_nude3")
+      .setLabel("je n*de pas")
+      .setEmoji("1494226093429751818")
+      .setStyle(ButtonStyle.Secondary)
+  );
+
+  await message.channel.send({ embeds: [embed], components: [row] });
+  await message.delete().catch((err) => {
+    console.error("Erreur suppression message embedrole2 :", err);
+  });
+  return;
+}
   if (cmd === "!panneauticket") {
     if (!message.member?.permissions.has(PermissionFlagsBits.Administrator)) {
       return message.reply({
@@ -1861,59 +1915,103 @@ if (interaction.isChatInputCommand()) {
     return;
   }
 
-  // ── Rôles genre
-  if (interaction.isButton() && (interaction.customId === "role_homme" || interaction.customId === "role_femme")) {
-    if (!guild) return;
+  // ── Auto Rôles
+if (
+  interaction.isButton() &&
+  ["role_nude1", "role_nude2", "role_nude3"].includes(interaction.customId)
+) {
+  if (!guild) return;
 
-    const ok = await safeDefer(interaction, "role_buttons");
-    if (!ok) return;
+  const ok = await safeDefer(interaction, "nude_role_buttons");
+  if (!ok) return;
 
-    try {
-      const roleHomme = await guild.roles.fetch(ROLE_HOMME_ID);
-      const roleFemme = await guild.roles.fetch(ROLE_FEMME_ID);
+  try {
+    const roleNude1 = await guild.roles.fetch(ROLE_NUDE1_ID);
+    const roleNude2 = await guild.roles.fetch(ROLE_NUDE2_ID);
+    const roleNude3 = await guild.roles.fetch(ROLE_NUDE3_ID);
 
-      if (!roleHomme || !roleFemme) {
+    if (!roleNude1 || !roleNude2 || !roleNude3) {
+      return safeReply(
+        interaction,
+        "❌ Rôles NSFW introuvables. Contacte un administrateur.",
+        "nude_roles_fetch"
+      );
+    }
+
+    if (interaction.customId === "role_nude1") {
+      if (member.roles.cache.has(ROLE_NUDE1_ID)) {
         return safeReply(
           interaction,
-          "❌ Rôles introuvables. Contacte un administrateur.",
-          "role_fetch"
+          "ℹ️ Tu as déjà le rôle **je n*de**.",
+          "role_nude1_already"
         );
       }
 
-      if (interaction.customId === "role_homme") {
-        if (member.roles.cache.has(ROLE_HOMME_ID)) {
-          return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Homme**.", "role_homme_already");
-        }
+      await member.roles.remove([roleNude2, roleNude3]).catch((err) => {
+        console.error("Erreur retrait autres rôles NSFW :", err);
+      });
 
-        await member.roles.remove(roleFemme).catch((err) => {
-          console.error("Erreur retrait role femme :", err);
-        });
-        await member.roles.add(roleHomme);
+      await member.roles.add(roleNude1);
 
-        return safeReply(interaction, "✅ Le rôle **Homme** t'a été attribué !", "role_homme_done");
-      }
-
-      if (interaction.customId === "role_femme") {
-        if (member.roles.cache.has(ROLE_FEMME_ID)) {
-          return safeReply(interaction, "ℹ️ Tu as déjà le rôle **Femme**.", "role_femme_already");
-        }
-
-        await member.roles.remove(roleHomme).catch((err) => {
-          console.error("Erreur retrait role homme :", err);
-        });
-        await member.roles.add(roleFemme);
-
-        return safeReply(interaction, "✅ Le rôle **Femme** t'a été attribué !", "role_femme_done");
-      }
-    } catch (err) {
-      console.error("Erreur attribution rôle :", err);
       return safeReply(
         interaction,
-        "❌ Une erreur est survenue lors de l'attribution du rôle.",
-        "role_error"
+        "✅ Le rôle **je n*de** t'a été attribué !",
+        "role_nude1_done"
       );
     }
+
+    if (interaction.customId === "role_nude2") {
+      if (member.roles.cache.has(ROLE_NUDE2_ID)) {
+        return safeReply(
+          interaction,
+          "ℹ️ Tu as déjà le rôle **je n*de si affinité**.",
+          "role_nude2_already"
+        );
+      }
+
+      await member.roles.remove([roleNude1, roleNude3]).catch((err) => {
+        console.error("Erreur retrait autres rôles NSFW :", err);
+      });
+
+      await member.roles.add(roleNude2);
+
+      return safeReply(
+        interaction,
+        "✅ Le rôle **je n*de si affinité** t'a été attribué !",
+        "role_nude2_done"
+      );
+    }
+
+    if (interaction.customId === "role_nude3") {
+      if (member.roles.cache.has(ROLE_NUDE3_ID)) {
+        return safeReply(
+          interaction,
+          "ℹ️ Tu as déjà le rôle **je n*de pas**.",
+          "role_nude3_already"
+        );
+      }
+
+      await member.roles.remove([roleNude1, roleNude2]).catch((err) => {
+        console.error("Erreur retrait autres rôles NSFW :", err);
+      });
+
+      await member.roles.add(roleNude3);
+
+      return safeReply(
+        interaction,
+        "✅ Le rôle **je n*de pas** t'a été attribué !",
+        "role_nude3_done"
+      );
+    }
+  } catch (err) {
+    console.error("Erreur attribution rôle NSFW :", err);
+    return safeReply(
+      interaction,
+      "❌ Une erreur est survenue lors de l'attribution du rôle NSFW.",
+      "nude_role_error"
+    );
   }
+}
 
   // ── Bouton : ouvrir un ticket
   if (interaction.isButton() && interaction.customId === "ticket_open") {
