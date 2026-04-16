@@ -1201,8 +1201,8 @@ client.on("messageCreate", async (message) => {
       .setTitle("✨ Choisis ton genre ✨")
       .setDescription(
         "Bienvenue sur le serveur ! Sélectionne ton genre ci-dessous en cliquant sur le bouton correspondant.\n\n" +
-          "🔵 **Homme** — Clique pour obtenir le rôle Homme\n" +
-          "🌸 **Femme** — Clique pour obtenir le rôle Femme\n\n" +
+          "<:649138genderids:1481759654387384555> **Homme** — Clique pour obtenir le rôle Homme\n" +
+          "<:63396genderids:1481759633961124002> **Femme** — Clique pour obtenir le rôle Femme\n\n" +
           "_Tu peux changer de rôle à tout moment en recliquant sur un bouton._"
       )
       .setColor(VIOLET_FONCE)
@@ -1239,7 +1239,7 @@ client.on("messageCreate", async (message) => {
       .setDescription(
         "Besoin d'aide ? Créez un ticket en cliquant sur le bouton ci-dessous.\n\n" +
           "Un canal privé sera créé où vous pourrez discuter avec notre équipe de support.\n\n" +
-          "**<:398041book:1494163015745015828> Comment ça marche ?**\n" +
+          "**<:398041book:1494168601651974264>Comment ça marche ?**\n" +
           "• Cliquez sur **Ouvrir un ticket**\n" +
           "• Expliquez votre demande\n" +
           "• Notre équipe vous répondra rapidement\n" +
@@ -1248,6 +1248,7 @@ client.on("messageCreate", async (message) => {
           "**<:7577purple:1494162709963345970> Confidentialité**\nSeuls vous et le staff peuvent voir le ticket"
       )
       .setColor(VIOLET_FONCE)
+      .setThumbnail(https://cdn.discordapp.com/attachments/1081968565831352391/1494170511104671864/telechargement.gif?ex=69e1a23a&is=69e050ba&hm=4db4e5cfab01275dce111eb91b94fac8d49fb918587902df832d09fa0e5831b3&)
       .setImage("https://cdn.discordapp.com/attachments/1081968565831352391/1494165733750476920/XMAHUB_1.png?ex=69e19dc7&is=69e04c47&hm=910f5e22abf3e4a0d399d1d01602f80d7a673c7569aa0c5c5dce2812ea7cfd41&")
       .setFooter({ text: "Support XMAHUB" })
 
