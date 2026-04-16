@@ -1955,59 +1955,186 @@ if (interaction.isChatInputCommand()) {
     return;
   }
 
-  // ── Auto Rôles
-if (
-  interaction.isButton() &&
-  ["role_nude1", "role_nude2", "role_nude3"].includes(interaction.customId)
-) {
-  if (!guild) return;
+  // ── Auto Rôles Homme / Femme
+  if (
+    interaction.isButton() &&
+    ["role_homme", "role_femme"].includes(interaction.customId)
+  ) {
+    if (!guild) return;
 
-  try {
-    await interaction.deferReply({ flags: 64 });
+    try {
+      await interaction.deferReply({ flags: 64 });
 
+      const roleHomme = await guild.roles.fetch(ROLE_HOMME_ID);
+      const roleFemme = await guild.roles.fetch(ROLE_FEMME_ID);
 
-    console.log("NSFW click:", interaction.customId);
-    console.log("ROLE_NUDE1_ID =", ROLE_NUDE1_ID);
-    console.log("ROLE_NUDE2_ID =", ROLE_NUDE2_ID);
-    console.log("ROLE_NUDE3_ID =", ROLE_NUDE3_ID);
+      if (!roleHomme || !roleFemme) {
+        return await interaction.editReply("❌ Rôles introuvables. Contacte un administrateur.");
+      }
 
-    const roleNude1 = await guild.roles.fetch(ROLE_NUDE1_ID);
-    const roleNude2 = await guild.roles.fetch(ROLE_NUDE2_ID);
-    const roleNude3 = await guild.roles.fetch(ROLE_NUDE3_ID);
+      if (interaction.customId === "role_homme") {
+        if (member.roles.cache.has(ROLE_HOMME_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **Homme**.");
+        }
 
-    console.log("roleNude1 =", roleNude1?.name);
-    console.log("roleNude2 =", roleNude2?.name);
-    console.log("roleNude3 =", roleNude3?.name);
+        await member.roles.remove([ROLE_FEMME_ID]).catch((err) => {
+          console.error("Erreur retrait rôle femme :", err);
+        });
+        await member.roles.add(ROLE_HOMME_ID);
 
-    if (!roleNude1 || !roleNude2 || !roleNude3) {
-      return await interaction.editReply("❌ Un ou plusieurs rôles NSFW sont introuvables.");
+        return await interaction.editReply("✅ Le rôle **Homme** t'a été attribué !");
+      }
+
+      if (interaction.customId === "role_femme") {
+        if (member.roles.cache.has(ROLE_FEMME_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **Femme**.");
+        }
+
+        await member.roles.remove([ROLE_HOMME_ID]).catch((err) => {
+          console.error("Erreur retrait rôle homme :", err);
+        });
+        await member.roles.add(ROLE_FEMME_ID);
+
+        return await interaction.editReply("✅ Le rôle **Femme** t'a été attribué !");
+      }
+    } catch (err) {
+      console.error("Erreur complète rôle Homme/Femme :", err);
+
+      return await interaction.editReply(
+        "❌ Erreur lors de l'attribution du rôle Homme/Femme."
+      ).catch(console.error);
     }
-
-    if (interaction.customId === "role_nude1") {
-      await member.roles.remove([ROLE_NUDE2_ID, ROLE_NUDE3_ID]);
-      await member.roles.add(ROLE_NUDE1_ID);
-      return await interaction.editReply("✅ Le rôle **je n\\*de** t'a été attribué !");
-    }
-
-    if (interaction.customId === "role_nude2") {
-      await member.roles.remove([ROLE_NUDE1_ID, ROLE_NUDE3_ID]);
-      await member.roles.add(ROLE_NUDE2_ID);
-      return await interaction.editReply("✅ Le rôle **je n\\*de si affinité** t'a été attribué !");
-    }
-
-    if (interaction.customId === "role_nude3") {
-      await member.roles.remove([ROLE_NUDE1_ID, ROLE_NUDE2_ID]);
-      await member.roles.add(ROLE_NUDE3_ID);
-      return await interaction.editReply("✅ Le rôle **je n\\*de pas** t'a été attribué !");
-    }
-  } catch (err) {
-    console.error("Erreur complète rôle NSFW :", err);
-
-    return await interaction.editReply(
-      "❌ Erreur lors de l'attribution du rôle NSFW."
-    ).catch(console.error);
   }
-}
+
+  // ── Auto Rôles NSFW
+  if (
+    interaction.isButton() &&
+    ["role_nude1", "role_nude2", "role_nude3"].includes(interaction.customId)
+  ) {
+    if (!guild) return;
+
+    try {
+      await interaction.deferReply({ flags: 64 });
+
+      console.log("NSFW click:", interaction.customId);
+      console.log("ROLE_NUDE1_ID =", ROLE_NUDE1_ID);
+      console.log("ROLE_NUDE2_ID =", ROLE_NUDE2_ID);
+      console.log("ROLE_NUDE3_ID =", ROLE_NUDE3_ID);
+
+      const roleNude1 = await guild.roles.fetch(ROLE_NUDE1_ID);
+      const roleNude2 = await guild.roles.fetch(ROLE_NUDE2_ID);
+      const roleNude3 = await guild.roles.fetch(ROLE_NUDE3_ID);
+
+      console.log("roleNude1 =", roleNude1?.name);
+      console.log("roleNude2 =", roleNude2?.name);
+      console.log("roleNude3 =", roleNude3?.name);
+
+      if (!roleNude1 || !roleNude2 || !roleNude3) {
+        return await interaction.editReply("❌ Un ou plusieurs rôles NSFW sont introuvables.");
+      }
+
+      if (interaction.customId === "role_nude1") {
+        if (member.roles.cache.has(ROLE_NUDE1_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **je n\\*de**.");
+        }
+
+        await member.roles.remove([ROLE_NUDE2_ID, ROLE_NUDE3_ID]);
+        await member.roles.add(ROLE_NUDE1_ID);
+        return await interaction.editReply("✅ Le rôle **je n\\*de** t'a été attribué !");
+      }
+
+      if (interaction.customId === "role_nude2") {
+        if (member.roles.cache.has(ROLE_NUDE2_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **je n\\*de si affinité**.");
+        }
+
+        await member.roles.remove([ROLE_NUDE1_ID, ROLE_NUDE3_ID]);
+        await member.roles.add(ROLE_NUDE2_ID);
+        return await interaction.editReply("✅ Le rôle **je n\\*de si affinité** t'a été attribué !");
+      }
+
+      if (interaction.customId === "role_nude3") {
+        if (member.roles.cache.has(ROLE_NUDE3_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **je n\\*de pas**.");
+        }
+
+        await member.roles.remove([ROLE_NUDE1_ID, ROLE_NUDE2_ID]);
+        await member.roles.add(ROLE_NUDE3_ID);
+        return await interaction.editReply("✅ Le rôle **je n\\*de pas** t'a été attribué !");
+      }
+    } catch (err) {
+      console.error("Erreur complète rôle NSFW :", err);
+
+      return await interaction.editReply(
+        "❌ Erreur lors de l'attribution du rôle NSFW."
+      ).catch(console.error);
+    }
+  }
+
+  // ── Auto Rôles MP
+  if (
+    interaction.isButton() &&
+    ["role_mp1", "role_mp2", "role_mp3"].includes(interaction.customId)
+  ) {
+    if (!guild) return;
+
+    try {
+      await interaction.deferReply({ flags: 64 });
+
+      console.log("MP click:", interaction.customId);
+      console.log("ROLE_MP1_ID =", ROLE_MP1_ID);
+      console.log("ROLE_MP2_ID =", ROLE_MP2_ID);
+      console.log("ROLE_MP3_ID =", ROLE_MP3_ID);
+
+      const roleMp1 = await guild.roles.fetch(ROLE_MP1_ID);
+      const roleMp2 = await guild.roles.fetch(ROLE_MP2_ID);
+      const roleMp3 = await guild.roles.fetch(ROLE_MP3_ID);
+
+      console.log("roleMp1 =", roleMp1?.name);
+      console.log("roleMp2 =", roleMp2?.name);
+      console.log("roleMp3 =", roleMp3?.name);
+
+      if (!roleMp1 || !roleMp2 || !roleMp3) {
+        return await interaction.editReply("❌ Un ou plusieurs rôles MP sont introuvables.");
+      }
+
+      if (interaction.customId === "role_mp1") {
+        if (member.roles.cache.has(ROLE_MP1_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **MP ouvert**.");
+        }
+
+        await member.roles.remove([ROLE_MP2_ID, ROLE_MP3_ID]);
+        await member.roles.add(ROLE_MP1_ID);
+        return await interaction.editReply("✅ Le rôle **MP ouvert** t'a été attribué !");
+      }
+
+      if (interaction.customId === "role_mp2") {
+        if (member.roles.cache.has(ROLE_MP2_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **MP sur demande**.");
+        }
+
+        await member.roles.remove([ROLE_MP1_ID, ROLE_MP3_ID]);
+        await member.roles.add(ROLE_MP2_ID);
+        return await interaction.editReply("✅ Le rôle **MP sur demande** t'a été attribué !");
+      }
+
+      if (interaction.customId === "role_mp3") {
+        if (member.roles.cache.has(ROLE_MP3_ID)) {
+          return await interaction.editReply("ℹ️ Tu as déjà le rôle **MP fermé**.");
+        }
+
+        await member.roles.remove([ROLE_MP1_ID, ROLE_MP2_ID]);
+        await member.roles.add(ROLE_MP3_ID);
+        return await interaction.editReply("✅ Le rôle **MP fermé** t'a été attribué !");
+      }
+    } catch (err) {
+      console.error("Erreur complète rôle MP :", err);
+
+      return await interaction.editReply(
+        "❌ Erreur lors de l'attribution du rôle MP."
+      ).catch(console.error);
+    }
+  }
   // ── Bouton : ouvrir un ticket
   if (interaction.isButton() && interaction.customId === "ticket_open") {
     if (!guild) return;
